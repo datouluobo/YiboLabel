@@ -1,25 +1,7 @@
 import {
-  ArrowDown,
-  ArrowUp,
-  ChevronsDown,
-  ChevronsUp,
-  Eye,
-  EyeOff,
   FilePlus2,
-  ImagePlus,
-  Layers,
-  LockKeyhole,
-  Minus,
-  Printer,
-  RefreshCw,
   RotateCcw,
   Upload,
-  QrCode,
-  Save,
-  ScanBarcode,
-  Square,
-  Type,
-  UnlockKeyhole,
 } from 'lucide-react'
 import {
   useCallback,
@@ -57,13 +39,13 @@ import {
 } from './api/templatesApi'
 import { getErrorMessage } from './api/http'
 import { ContentPicker } from './components/ContentPicker'
+import { DocumentPrintDialog } from './components/DocumentPrintDialog'
+import { EditorSidebar } from './components/EditorSidebar'
 import { EditorTabStrip } from './components/EditorTabStrip'
 import {
   ElementInspector,
   ElementPreview,
-  LayerActionButton,
   MultiSelectionInspector,
-  ToolButton,
 } from './components/ElementInspector'
 import { GroupBindingPanel } from './components/GroupBindingPanel'
 import { LexiconManager } from './components/LexiconManager'
@@ -99,7 +81,6 @@ import {
   createElement,
   createId,
   getDefaultElementName,
-  getLayerMeta,
   getQrTextAreaHeightMm,
   isLexiconEnabledElement,
   minDocumentSizeMm,
@@ -115,9 +96,6 @@ import {
 } from './domain/labelDocument'
 import {
   applyTemplateMetaPatch,
-  formatTemplateSource,
-  getLayerPositionLabel,
-  parseTagInput,
   toTemplateSummary,
 } from './domain/templateMetadata'
 import {
@@ -1817,89 +1795,40 @@ export default function App() {
           />
         ) : (
           <>
-            <aside className="sidebar">
-              <section className="panel insert-panel">
-                <div className="panel-heading">
-                  <span>插入对象</span>
-                  <span>{labelDocument.elements.length}</span>
-                </div>
-                <div className="tool-grid">
-                  <ToolButton icon={<Type size={16} />} label="文本" onClick={() => addNewElement('text')} />
-                  <ToolButton icon={<ScanBarcode size={16} />} label="条码" onClick={() => addNewElement('barcode')} />
-                  <ToolButton icon={<QrCode size={16} />} label="二维码" onClick={() => addNewElement('qrcode')} />
-                  <ToolButton icon={<Minus size={16} />} label="线条" onClick={() => addNewElement('line')} />
-                  <ToolButton icon={<Square size={16} />} label="矩形" onClick={() => addNewElement('rectangle')} />
-                  <ToolButton icon={<ImagePlus size={16} />} label="图片" onClick={() => fileInputRef.current?.click()} />
-                </div>
-                <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageUpload} />
-              </section>
+            <EditorSidebar
+              hasActiveTab={hasActiveTab}
+              elementCount={labelDocument.elements.length}
+              layersCollapsed={layersCollapsed}
+              selectedElementIds={selectedElementIds}
+              sortedElements={sortedElements}
+              onAddText={() => addNewElement('text')}
+              onAddBarcode={() => addNewElement('barcode')}
+              onAddQrCode={() => addNewElement('qrcode')}
+              onAddLine={() => addNewElement('line')}
+              onAddRectangle={() => addNewElement('rectangle')}
+              onAddImage={() => fileInputRef.current?.click()}
+              onToggleLayersCollapsed={() => setLayersCollapsed((current) => !current)}
+              onReorderFront={() => reorderSelected('front')}
+              onReorderForward={() => reorderSelected('forward')}
+              onReorderBackward={() => reorderSelected('backward')}
+              onReorderBack={() => reorderSelected('back')}
+              onSelectLayer={(elementId, additive) => {
+                if (!additive) {
+                  setActiveSelection([elementId])
+                  return
+                }
 
-              <section className="panel layers-panel">
-                <div className="panel-heading panel-heading-button">
-                  <button className="collapse-trigger" onClick={() => setLayersCollapsed((current) => !current)}>
-                    <span className="panel-title-with-icon">
-                      <Layers size={15} />
-                      图层
-                    </span>
-                    <strong>{selectedElementIds.length > 0 ? `${selectedElementIds.length} / ${sortedElements.length}` : sortedElements.length}</strong>
-                  </button>
-                </div>
-                {!layersCollapsed ? (
-                  <>
-                    <div className="layer-toolbar" aria-label="层级操作">
-                      <LayerActionButton icon={<ChevronsUp size={14} />} label="置顶" disabled={selectedElementIds.length === 0} onClick={() => reorderSelected('front')} />
-                      <LayerActionButton icon={<ArrowUp size={14} />} label="上移" disabled={selectedElementIds.length === 0} onClick={() => reorderSelected('forward')} />
-                      <LayerActionButton icon={<ArrowDown size={14} />} label="下移" disabled={selectedElementIds.length === 0} onClick={() => reorderSelected('backward')} />
-                      <LayerActionButton icon={<ChevronsDown size={14} />} label="置底" disabled={selectedElementIds.length === 0} onClick={() => reorderSelected('back')} />
-                    </div>
-                    <div className="layer-list">
-                      {!hasActiveTab ? (
-                        <p className="empty-note">当前没有打开的文件，所以也没有可管理的图层。</p>
-                      ) : sortedElements.length === 0 ? (
-                        <p className="empty-note">还没有对象。先从上方插入文本、条码、二维码或形状。</p>
-                      ) : (
-                        [...sortedElements].reverse().map((element) => (
-                          <div key={element.id} className={clsx('layer-row', selectedElementIds.includes(element.id) && 'selected')}>
-                            <button
-                              className="layer-main"
-                              type="button"
-                              onClick={(event) => {
-                                const additive = event.ctrlKey || event.metaKey
-                                if (!additive) {
-                                  setActiveSelection([element.id])
-                                  return
-                                }
+                setActiveSelection(
+                  selectedElementIds.includes(elementId)
+                    ? selectedElementIds.filter((id) => id !== elementId)
+                    : [...selectedElementIds, elementId],
+                )
+              }}
+              onToggleHidden={toggleHidden}
+              onToggleLock={toggleLock}
+            />
 
-                                setActiveSelection(
-                                  selectedElementIds.includes(element.id)
-                                    ? selectedElementIds.filter((id) => id !== element.id)
-                                    : [...selectedElementIds, element.id],
-                                )
-                              }}
-                            >
-                              <span className="layer-name-row">
-                                <strong>{element.name}</strong>
-                                <small>{getLayerPositionLabel(element, sortedElements.length)}</small>
-                              </span>
-                              <span>{getLayerMeta(element)}</span>
-                            </button>
-                            <div className="layer-actions">
-                              <button className={clsx('mini-button layer-icon-button', element.hidden && 'active')} type="button" onClick={() => toggleHidden(element.id)} title={element.hidden ? '显示元素' : '隐藏元素'} aria-label={element.hidden ? '显示元素' : '隐藏元素'}>
-                                {element.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                              </button>
-                              <button className={clsx('mini-button layer-icon-button', element.locked && 'active')} type="button" onClick={() => toggleLock(element.id)} title={element.locked ? '解锁元素' : '锁定元素'} aria-label={element.locked ? '解锁元素' : '锁定元素'}>
-                                {element.locked ? <LockKeyhole size={14} /> : <UnlockKeyhole size={14} />}
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    <p className="panel-note">上方按钮调整选中对象层级；Ctrl + 点击图层可多选，Alt + 点击画布可穿透选择下层对象。</p>
-                  </>
-                ) : null}
-              </section>
-            </aside>
+            <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageUpload} />
 
             <section className="canvas-panel">
               {hasActiveTab ? (
@@ -2130,108 +2059,26 @@ export default function App() {
 
       <input ref={ddlInputRef} type="file" accept=".ddl,.xml,text/xml" hidden onChange={handleDdlUpload} />
 
-      {showDocumentDialog && hasActiveTab ? (
-        <div className="modal-backdrop" onClick={() => setShowDocumentDialog(false)}>
-          <section className="modal-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-heading">
-              <span>文档与打印</span>
-              <button className="inline-icon-button" onClick={() => setShowDocumentDialog(false)} aria-label="关闭文档与打印">
-                ×
-              </button>
-            </div>
-            <div className="modal-panel-body">
-              <label>
-                模板名称
-                <input value={labelDocument.name} onChange={(event) => setDocumentField('name', event.target.value)} />
-              </label>
-              <label>
-                模板说明
-                <textarea value={templateDescription} onChange={(event) => setActiveTemplateMeta({ templateDescription: event.target.value })} placeholder="用于说明模板用途、内容或打印注意事项" />
-              </label>
-              <label>
-                模板标签
-                <input
-                  value={templateTags.join(', ')}
-                  onChange={(event) => setActiveTemplateMeta({ templateTags: parseTagInput(event.target.value) })}
-                  placeholder="例如：发货, 40x30, 条码"
-                />
-              </label>
-              <label>
-                模板来源
-                <input value={formatTemplateSource(templateSource)} disabled />
-              </label>
-              <div className="field-row">
-                <label>
-                  宽度 (mm)
-                  <input type="number" min="20" step="1" value={labelDocument.widthMm} onChange={(event) => setDocumentField('widthMm', Number(event.target.value))} />
-                </label>
-                <label>
-                  高度 (mm)
-                  <input type="number" min="20" step="1" value={labelDocument.heightMm} onChange={(event) => setDocumentField('heightMm', Number(event.target.value))} />
-                </label>
-              </div>
-              <div className="field-row">
-                <label>
-                  间隙 (mm)
-                  <input type="number" min="0" step="0.5" value={labelDocument.gapMm} onChange={(event) => setDocumentField('gapMm', Number(event.target.value))} />
-                </label>
-                <label>
-                  打印浓度
-                  <input type="number" min="1" max="15" step="1" value={labelDocument.darkness} onChange={(event) => setDocumentField('darkness', Number(event.target.value))} />
-                </label>
-              </div>
-              <label>
-                打印份数
-                <input type="number" min="1" max="99" value={labelDocument.copies} onChange={(event) => setDocumentField('copies', Number(event.target.value))} />
-              </label>
-              <label>
-                打印机
-                <select
-                  value={labelDocument.printerDevicePath ?? appState?.printers[0]?.devicePath ?? ''}
-                  onChange={(event) => setDocumentField('printerDevicePath', event.target.value)}
-                  disabled={!appState?.printers.length}
-                >
-                  {appState?.printers.length ? (
-                    appState.printers.map((printer) => (
-                      <option key={printer.id} value={printer.devicePath}>
-                        {printer.displayName}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="">未发现打印机</option>
-                  )}
-                </select>
-              </label>
-              {currentPrinter ? (
-                <div className={clsx('printer-status', currentPrinter.isAvailable ? 'online' : 'offline')}>
-                  <span className="printer-status-dot" aria-hidden="true" />
-                  <div>
-                    <strong>{currentPrinter.displayName}</strong>
-                    <span>{currentPrinter.statusMessage}</span>
-                  </div>
-                  <button className="inline-icon-button" type="button" onClick={() => void refreshPrinters()} disabled={refreshingPrinters} title="刷新打印机状态" aria-label="刷新打印机状态">
-                    <RefreshCw size={14} className={refreshingPrinters ? 'is-spinning' : undefined} />
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            <div className="modal-actions">
-              <button className="ghost-button compact-button" onClick={() => void saveCurrentTemplate()} disabled={saving}>
-                <Save size={14} />
-                {saving ? '保存中...' : activeTemplateId ? '保存' : '保存为模板'}
-              </button>
-              <button className="ghost-button compact-button" onClick={() => void saveAsTemplate()} disabled={saving}>
-                <Save size={14} />
-                另存为
-              </button>
-              <button className="print-button compact-button" onClick={printCurrent} disabled={printing || !currentPrinter?.isAvailable}>
-                <Printer size={14} />
-                {printing ? '打印中...' : '立即打印'}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <DocumentPrintDialog
+        open={showDocumentDialog && hasActiveTab}
+        labelDocument={labelDocument}
+        templateDescription={templateDescription}
+        templateTags={templateTags}
+        templateSource={templateSource}
+        activeTemplateId={activeTemplateId}
+        appState={appState}
+        currentPrinter={currentPrinter}
+        refreshingPrinters={refreshingPrinters}
+        saving={saving}
+        printing={printing}
+        onClose={() => setShowDocumentDialog(false)}
+        onDocumentFieldChange={setDocumentField}
+        onTemplateMetaChange={setActiveTemplateMeta}
+        onRefreshPrinters={() => void refreshPrinters()}
+        onSaveCurrentTemplate={() => void saveCurrentTemplate()}
+        onSaveAsTemplate={() => void saveAsTemplate()}
+        onPrintCurrent={printCurrent}
+      />
     </div>
   )
 }
