@@ -1,9 +1,4 @@
 import {
-  FilePlus2,
-  RotateCcw,
-  Upload,
-} from 'lucide-react'
-import {
   useCallback,
   useEffect,
   useMemo,
@@ -40,13 +35,10 @@ import {
 import { getErrorMessage } from './api/http'
 import { ContentPicker } from './components/ContentPicker'
 import { DocumentPrintDialog } from './components/DocumentPrintDialog'
+import { EditorCanvasPanel } from './components/EditorCanvasPanel'
 import { EditorSidebar } from './components/EditorSidebar'
 import { EditorTabStrip } from './components/EditorTabStrip'
-import {
-  ElementInspector,
-  ElementPreview,
-  MultiSelectionInspector,
-} from './components/ElementInspector'
+import { ElementInspector, MultiSelectionInspector } from './components/ElementInspector'
 import { GroupBindingPanel } from './components/GroupBindingPanel'
 import { LexiconManager } from './components/LexiconManager'
 import { TemplateLibraryView } from './components/TemplateLibraryView'
@@ -1830,176 +1822,39 @@ export default function App() {
 
             <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageUpload} />
 
-            <section className="canvas-panel">
-              {hasActiveTab ? (
-                <>
-                  <div className="canvas-toolbar canvas-toolbar-compact">
-                    <div className="canvas-toolbar-group">
-                      <button className="mini-button" disabled={selectedElementIds.length === 0} onClick={duplicateSelectedElements}>
-                        复制所选
-                      </button>
-                      <button className="mini-button" disabled={selectedElementIds.length === 0} onClick={deleteSelectedElements}>
-                        删除所选
-                      </button>
-                      <button className={clsx('mini-button', groupBinderOpen && 'active')} disabled={bindableSelectedElements.length === 0} onClick={() => setGroupBinderOpen((open) => !open)}>
-                        分组绑定
-                      </button>
-                      <button className={clsx('mini-button', contentPickerOpen && 'active')} disabled={!isLexiconEnabledElement(selectedElement)} onClick={() => setContentPickerOpen((open) => !open)}>
-                        内容候选
-                      </button>
-                    </div>
-                    <div className="canvas-metrics">
-                      <div>
-                        <span>对象数</span>
-                        <strong>{labelDocument.elements.length}</strong>
-                      </div>
-                      <div>
-                        <span>选中元素</span>
-                        <strong>{selectedElementIds.length}</strong>
-                      </div>
-                      <div>
-                        <span>可见元素</span>
-                        <strong>{visibleElements.length}</strong>
-                      </div>
-                    </div>
-                    <p className="canvas-toolbar-tip">Ctrl 多选，Alt 选下层，方向键微调</p>
-                  </div>
-
-                  <div ref={canvasWrapRef} className="canvas-wrap" onPointerDown={handleCanvasWrapPointerDown} onWheel={handleCanvasWheel}>
-                    <div className="canvas-ruler-frame">
-                      <div className="ruler-corner" />
-                      <div className="ruler ruler-horizontal" style={{ width: `${labelDocument.widthMm * canvasScale}px` }}>
-                        {horizontalRulerTicks.map((tick) => (
-                          <span
-                            key={tick.value}
-                            className={clsx('ruler-tick', tick.major && 'major')}
-                            style={{ left: `${tick.value * canvasScale}px` }}
-                          >
-                            {tick.major ? tick.value : null}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="ruler ruler-vertical" style={{ height: `${labelDocument.heightMm * canvasScale}px` }}>
-                        {verticalRulerTicks.map((tick) => (
-                          <span
-                            key={tick.value}
-                            className={clsx('ruler-tick', tick.major && 'major')}
-                            style={{ top: `${tick.value * canvasScale}px` }}
-                          >
-                            {tick.major ? tick.value : null}
-                          </span>
-                        ))}
-                      </div>
-                      <div
-                        ref={canvasRef}
-                        id="label-canvas"
-                        className="label-canvas"
-                        style={{
-                          width: `${labelDocument.widthMm * canvasScale}px`,
-                          height: `${labelDocument.heightMm * canvasScale}px`,
-                        }}
-                        onPointerDown={handleCanvasPointerDown}
-                      >
-                        <div className="grid-overlay" />
-                        {resolvedVisibleElements.map((element) => (
-                        <div
-                          key={element.id}
-                          className={clsx(
-                            'canvas-element',
-                            selectedElementIds.includes(element.id) && 'selected',
-                            element.locked && 'locked',
-                          )}
-                          style={{
-                            left: `${element.x * canvasScale}px`,
-                            top: `${element.y * canvasScale}px`,
-                            width: `${element.width * canvasScale}px`,
-                            height: `${element.height * canvasScale}px`,
-                            transform: `rotate(${element.rotation}deg)`,
-                            zIndex: element.zIndex ?? 0,
-                          }}
-                          onPointerDown={(event) => handleElementPointerDown(element, event)}
-                        >
-                          <ElementPreview element={element} canvasScale={canvasScale} />
-                        </div>
-                        ))}
-
-                        {selectionBounds && (
-                        <div
-                          className="selection-outline"
-                          style={{
-                            left: `${selectionBounds.left * canvasScale}px`,
-                            top: `${selectionBounds.top * canvasScale}px`,
-                            width: `${selectionBounds.width * canvasScale}px`,
-                            height: `${selectionBounds.height * canvasScale}px`,
-                            transform: selectedElement ? `rotate(${selectedElement.rotation}deg)` : undefined,
-                            zIndex: selectedElement ? selectedElement.zIndex ?? 0 : 1000,
-                          }}
-                        >
-                          {selectedElement && !selectedElement.locked && (
-                            <>
-                              {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as ResizeHandle[]).map((handle) => (
-                                <button
-                                  key={handle}
-                                  className={clsx('selection-handle', `handle-${handle}`)}
-                                  onPointerDown={(event) => handleResizeHandlePointerDown(handle, event)}
-                                />
-                              ))}
-                              <button className="rotation-handle" onPointerDown={handleRotatePointerDown} />
-                            </>
-                          )}
-                        </div>
-                        )}
-
-                        {snapLines.map((line) => (
-                        <div
-                          key={`${line.orientation}-${line.value}`}
-                          className={clsx('snap-line', line.orientation)}
-                          style={
-                            line.orientation === 'vertical'
-                              ? { left: `${line.value * canvasScale}px` }
-                              : { top: `${line.value * canvasScale}px` }
-                          }
-                        />
-                        ))}
-
-                        {marqueeBounds && (
-                        <div
-                          className="marquee-box"
-                          style={{
-                            left: `${marqueeBounds.left * canvasScale}px`,
-                            top: `${marqueeBounds.top * canvasScale}px`,
-                            width: `${marqueeBounds.width * canvasScale}px`,
-                            height: `${marqueeBounds.height * canvasScale}px`,
-                          }}
-                        />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="empty-workspace">
-                  <div className="empty-workspace-copy">
-                    <h2>工作区为空</h2>
-                    <p>先新建一个标签、导入 DDL，或从顶部模板库打开已有模板。</p>
-                  </div>
-                  <div className="empty-workspace-actions">
-                    <button className="action-button" onClick={createFreshDocument}>
-                      <FilePlus2 size={16} />
-                      新建标签
-                    </button>
-                    <button className="ghost-button" onClick={() => ddlInputRef.current?.click()}>
-                      <Upload size={16} />
-                      导入 DDL
-                    </button>
-                    <button className="ghost-button" onClick={reopenLastClosedTab} disabled={recentClosedTabs.length === 0}>
-                      <RotateCcw size={16} />
-                      恢复关闭标签
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
+            <EditorCanvasPanel
+              hasActiveTab={hasActiveTab}
+              labelDocument={labelDocument}
+              selectedElementIds={selectedElementIds}
+              visibleElementsCount={visibleElements.length}
+              bindableSelectedCount={bindableSelectedElements.length}
+              contentPickerOpen={contentPickerOpen}
+              groupBinderOpen={groupBinderOpen}
+              canvasScale={canvasScale}
+              horizontalRulerTicks={horizontalRulerTicks}
+              verticalRulerTicks={verticalRulerTicks}
+              canvasWrapRef={canvasWrapRef}
+              canvasRef={canvasRef}
+              resolvedVisibleElements={resolvedVisibleElements}
+              selectedElement={selectedElement}
+              selectionBounds={selectionBounds}
+              snapLines={snapLines}
+              marqueeBounds={marqueeBounds}
+              recentClosedTabsCount={recentClosedTabs.length}
+              onToggleGroupBinder={() => setGroupBinderOpen((open) => !open)}
+              onToggleContentPicker={() => setContentPickerOpen((open) => !open)}
+              onDuplicateSelected={duplicateSelectedElements}
+              onDeleteSelected={deleteSelectedElements}
+              onCanvasWrapPointerDown={handleCanvasWrapPointerDown}
+              onCanvasWheel={handleCanvasWheel}
+              onCanvasPointerDown={handleCanvasPointerDown}
+              onElementPointerDown={handleElementPointerDown}
+              onResizeHandlePointerDown={handleResizeHandlePointerDown}
+              onRotatePointerDown={handleRotatePointerDown}
+              onCreateFreshDocument={createFreshDocument}
+              onImportDdl={() => ddlInputRef.current?.click()}
+              onReopenLastClosedTab={reopenLastClosedTab}
+            />
 
             <aside className="inspector object-panel">
               {!hasActiveTab ? (
