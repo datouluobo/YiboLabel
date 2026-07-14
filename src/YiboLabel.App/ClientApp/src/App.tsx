@@ -98,6 +98,17 @@ import {
   serializeDocument,
   sortElements,
 } from './domain/labelDocument'
+import {
+  createEditorTab as createWorkspaceTab,
+  getTabDisplayName,
+  historyLimit,
+  isTabDirty as computeTabDirty,
+  normalizeEditorTab as restoreWorkspaceTab,
+  readWorkspaceSnapshot,
+  type ClosedTabSnapshot,
+  type EditorTab,
+  type WorkspaceSnapshot,
+} from './domain/workspace'
 import type {
   AppStateResponse,
   BarcodeElement,
@@ -120,58 +131,14 @@ import type {
 } from './types'
 
 const baseCanvasScale = 16
-const historyLimit = 40
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
-type HistoryState = {
-  past: LabelDocument[]
-  future: LabelDocument[]
-}
-
-type EditorTab = {
-  id: string
-  templateId: string | null
-  document: LabelDocument
-  templateDescription: string
-  templateTags: string[]
-  templateSource: string
-  selectedElementIds: string[]
-  history: HistoryState
-  lastSavedSnapshot: string
-}
-
 type TemplateSort = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'created-desc' | 'created-asc'
-
-type ClosedTabSnapshot = {
-  templateId: string | null
-  document: LabelDocument
-  templateDescription: string
-  templateTags: string[]
-  templateSource: string
-  selectedElementIds: string[]
-  lastSavedSnapshot: string
-}
 
 type WorkspaceSurface = 'editor' | 'templates' | 'lexicons'
 type WindowChromeCommand = 'drag' | 'toggle-maximize' | 'minimize' | 'close'
 type LayerAction = 'front' | 'back' | 'forward' | 'backward'
-
-type WorkspaceSnapshot = {
-  version: 6
-  activeTabId: string | null
-  tabs: Array<{
-    id: string
-    templateId: string | null
-    document: LabelDocument
-    templateDescription: string
-    templateTags: string[]
-    templateSource: string
-    selectedElementIds: string[]
-    history: HistoryState
-    lastSavedSnapshot: string
-  }>
-}
 
 type MoveInteraction = {
   mode: 'move'
@@ -222,78 +189,16 @@ function createEditorTab(
     templateTags?: string[]
     templateSource?: string
   },
-): EditorTab {
-  const normalized = normalizeDocument(document)
-  return {
-    id: options?.id ?? createId(),
-    templateId: options?.templateId ?? null,
-    document: normalized,
-    templateDescription: options?.templateDescription ?? '',
-    templateTags: options?.templateTags ?? [],
-    templateSource: options?.templateSource ?? (options?.templateId ? 'manual' : 'blank'),
-    selectedElementIds: options?.selectedElementIds ?? [normalized.elements[0]?.id].filter(Boolean) as string[],
-    history: { past: [], future: [] },
-    lastSavedSnapshot: serializeTabSnapshot({
-      document: normalized,
-      templateDescription: options?.templateDescription ?? '',
-      templateTags: options?.templateTags ?? [],
-      templateSource: options?.templateSource ?? (options?.templateId ? 'manual' : 'blank'),
-    }),
-  }
+) {
+  return createWorkspaceTab(document, serializeTabSnapshot, options)
 }
 
-function normalizeHistory(history: HistoryState | undefined) {
-  return {
-    past: (history?.past ?? []).map((document) => normalizeDocument(document)).slice(-historyLimit),
-    future: (history?.future ?? []).map((document) => normalizeDocument(document)).slice(0, historyLimit),
-  }
-}
-
-function normalizeEditorTab(tab: WorkspaceSnapshot['tabs'][number]): EditorTab {
-  const normalizedDocument = normalizeDocument(tab.document)
-  const validSelection = (tab.selectedElementIds ?? []).filter((id) => normalizedDocument.elements.some((element) => element.id === id))
-  return {
-    id: tab.id || createId(),
-    templateId: tab.templateId ?? null,
-    document: normalizedDocument,
-    templateDescription: tab.templateDescription ?? '',
-    templateTags: tab.templateTags ?? [],
-    templateSource: tab.templateSource ?? (tab.templateId ? 'manual' : 'blank'),
-    selectedElementIds: validSelection,
-    history: normalizeHistory(tab.history),
-    lastSavedSnapshot: tab.lastSavedSnapshot || serializeTabSnapshot({
-      document: normalizedDocument,
-      templateDescription: tab.templateDescription ?? '',
-      templateTags: tab.templateTags ?? [],
-      templateSource: tab.templateSource ?? (tab.templateId ? 'manual' : 'blank'),
-    }),
-  }
-}
-
-function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
-  try {
-    const raw = window.localStorage.getItem(workspaceStorageKey)
-    if (!raw) {
-      return null
-    }
-
-    const parsed = JSON.parse(raw) as WorkspaceSnapshot
-    if (parsed?.version !== 6 || !Array.isArray(parsed.tabs)) {
-      return null
-    }
-
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-function getTabDisplayName(tab: Pick<EditorTab, 'document'>) {
-  return tab.document.name?.trim() || '未命名标签'
+function normalizeEditorTab(tab: WorkspaceSnapshot['tabs'][number]) {
+  return restoreWorkspaceTab(tab, serializeTabSnapshot)
 }
 
 function isTabDirty(tab: Pick<EditorTab, 'document' | 'templateDescription' | 'templateTags' | 'templateSource' | 'lastSavedSnapshot'>) {
-  return serializeTabSnapshot(tab) !== tab.lastSavedSnapshot
+  return computeTabDirty(tab, serializeTabSnapshot)
 }
 
 function toTemplateSummary(record: LabelTemplateRecord): LabelTemplateSummary {
