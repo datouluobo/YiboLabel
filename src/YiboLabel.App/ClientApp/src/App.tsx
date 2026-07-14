@@ -36,6 +36,29 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import './App.css'
+import { fetchAppState, fetchPrinters } from './api/appStateApi'
+import {
+  createLexiconEntry as createLexiconEntryRequest,
+  createLexiconGroup as createLexiconGroupRequest,
+  deleteLexiconEntry as deleteLexiconEntryRequest,
+  deleteLexiconGroup as deleteLexiconGroupRequest,
+  fetchLexiconGroups,
+  fetchLexiconLibrary,
+  fetchLexiconSuggestions,
+  renameLexiconGroup as renameLexiconGroupRequest,
+  updateLexiconEntry as updateLexiconEntryRequest,
+} from './api/lexiconsApi'
+import { printDocument } from './api/printApi'
+import {
+  createTemplate,
+  deleteTemplate as deleteTemplateRequest,
+  duplicateTemplate as duplicateTemplateRequest,
+  fetchTemplate,
+  fetchTemplates,
+  updateTemplate,
+  updateTemplateMeta,
+} from './api/templatesApi'
+import { getErrorMessage } from './api/http'
 import {
   boundsIntersect,
   createRulerTicks,
@@ -89,9 +112,8 @@ import type {
   LexiconLibrary,
   LexiconGroupSummary,
   LexiconSuggestion,
-  LineElement,
-  PrintResult,
   QrCodeElement,
+  LineElement,
   RectangleElement,
   TextElement,
   UpdateTemplateMetaRequest,
@@ -1097,10 +1119,10 @@ export default function App() {
   async function bootstrap() {
     try {
       const [stateResponse, templatesResponse, lexiconGroupsResponse, lexiconLibraryResponse] = await Promise.all([
-        fetchJson<AppStateResponse>('/api/app-state'),
-        fetchJson<LabelTemplateSummary[]>('/api/templates'),
-        fetchJson<LexiconGroupSummary[]>('/api/lexicon-groups'),
-        fetchJson<LexiconLibrary>('/api/lexicons'),
+        fetchAppState(),
+        fetchTemplates(),
+        fetchLexiconGroups(),
+        fetchLexiconLibrary(),
       ])
 
       setAppState(stateResponse)
@@ -1120,7 +1142,7 @@ export default function App() {
       }
 
       if (templatesResponse.length > 0) {
-        const template = await fetchJson<LabelTemplateRecord>(`/api/templates/${templatesResponse[0].id}`)
+        const template = await fetchTemplate(templatesResponse[0].id)
         const tab = createEditorTab(template.document, {
           templateId: template.id,
           templateDescription: template.description,
@@ -1143,7 +1165,7 @@ export default function App() {
   }
 
   async function refreshTemplateLibrary() {
-    setTemplates(await fetchJson<LabelTemplateSummary[]>('/api/templates'))
+    setTemplates(await fetchTemplates())
   }
 
   function upsertTemplateSummary(record: LabelTemplateRecord) {
@@ -1158,8 +1180,8 @@ export default function App() {
 
   async function refreshLexiconGroups() {
     const [groups, library] = await Promise.all([
-      fetchJson<LexiconGroupSummary[]>('/api/lexicon-groups'),
-      fetchJson<LexiconLibrary>('/api/lexicons'),
+      fetchLexiconGroups(),
+      fetchLexiconLibrary(),
     ])
     setLexiconGroups(groups)
     setLexiconLibrary(library)
@@ -1183,7 +1205,7 @@ export default function App() {
     }
 
     try {
-      const created = await postJson<LexiconGroup>(`/api/lexicons/${activeLexicon.id}/groups`, { name })
+      const created = await createLexiconGroupRequest(activeLexicon.id, name)
       await refreshLexiconGroups()
       setActiveLexiconId(activeLexicon.id)
       setActiveLexiconGroupId(created.id)
@@ -1204,7 +1226,7 @@ export default function App() {
     }
 
     try {
-      const saved = await putJson<LexiconGroup>(`/api/lexicons/${activeLexicon.id}/groups/${group.id}`, { name })
+      const saved = await renameLexiconGroupRequest(activeLexicon.id, group.id, name)
       await refreshLexiconGroups()
       setActiveLexiconId(activeLexicon.id)
       setActiveLexiconGroupId(saved.id)
@@ -1225,7 +1247,7 @@ export default function App() {
     }
 
     try {
-      await deleteJson(`/api/lexicons/${activeLexicon.id}/groups/${group.id}`)
+      await deleteLexiconGroupRequest(activeLexicon.id, group.id)
       await refreshLexiconGroups()
       setActiveLexiconId(activeLexicon.id)
       setStatus(`已删除分组：${group.name}`)
@@ -1246,7 +1268,7 @@ export default function App() {
     }
 
     try {
-      await postJson<LexiconEntry>(`/api/lexicons/${activeLexicon.id}/groups/${activeLexiconGroup.id}/entries`, { text })
+      await createLexiconEntryRequest(activeLexicon.id, activeLexiconGroup.id, text)
       await refreshLexiconGroups()
       setActiveLexiconId(activeLexicon.id)
       setActiveLexiconGroupId(activeLexiconGroup.id)
@@ -1262,7 +1284,7 @@ export default function App() {
     }
 
     try {
-      await putJson<LexiconEntry>(`/api/lexicons/${activeLexicon.id}/groups/${activeLexiconGroup.id}/entries/${entry.id}`, { text: text.trim() })
+      await updateLexiconEntryRequest(activeLexicon.id, activeLexiconGroup.id, entry.id, text.trim())
       await refreshLexiconGroups()
       setActiveLexiconId(activeLexicon.id)
       setActiveLexiconGroupId(activeLexiconGroup.id)
@@ -1283,7 +1305,7 @@ export default function App() {
     }
 
     try {
-      await deleteJson(`/api/lexicons/${activeLexicon.id}/groups/${activeLexiconGroup.id}/entries/${entry.id}`)
+      await deleteLexiconEntryRequest(activeLexicon.id, activeLexiconGroup.id, entry.id)
       await refreshLexiconGroups()
       setActiveLexiconId(activeLexicon.id)
       setActiveLexiconGroupId(activeLexiconGroup.id)
@@ -1357,7 +1379,7 @@ export default function App() {
   }
 
   async function loadTemplate(id: string) {
-    const template = await fetchJson<LabelTemplateRecord>(`/api/templates/${id}`)
+    const template = await fetchTemplate(id)
     const existingTab = tabsRef.current.find((tab) => tab.templateId === template.id)
     if (existingTab) {
       showEditor(existingTab.id)
@@ -1391,7 +1413,7 @@ export default function App() {
     const snapshotAtSaveStart = currentSnapshot
     setSaving(true)
     try {
-      const saved = await putJson<LabelTemplateRecord>(`/api/templates/${activeTemplateId}`, {
+      const saved = await updateTemplate(activeTemplateId, {
         name: labelDocument.name,
         description: templateDescription,
         tags: templateTags,
@@ -1426,7 +1448,7 @@ export default function App() {
     const snapshotAtSaveStart = currentSnapshot
     setSaving(true)
     try {
-      const saved = await postJson<LabelTemplateRecord>('/api/templates', {
+      const saved = await createTemplate({
         name: targetName,
         description: templateDescription,
         tags: templateTags,
@@ -1456,11 +1478,11 @@ export default function App() {
     }
 
     try {
-      const saved = await patchJson<LabelTemplateRecord, UpdateTemplateMetaRequest>(`/api/templates/${template.id}/meta`, {
+      const saved = await updateTemplateMeta(template.id, {
         name: nextName,
         description: template.description,
         tags: template.tags,
-      })
+      } satisfies UpdateTemplateMetaRequest)
 
       setTabs((currentTabs) =>
         currentTabs.map((tab) => {
@@ -1504,7 +1526,7 @@ export default function App() {
     }
 
     try {
-      const duplicated = await postJson<LabelTemplateRecord>(`/api/templates/${template.id}/duplicate`, {
+      const duplicated = await duplicateTemplateRequest(template.id, {
         name: nextName,
       } as DuplicateTemplateRequest)
       await refreshTemplateLibrary()
@@ -1530,7 +1552,7 @@ export default function App() {
     }
 
     try {
-      await deleteJson(`/api/templates/${template.id}`)
+      await deleteTemplateRequest(template.id)
       setTabs((currentTabs) =>
         currentTabs.map((tab) =>
           tab.templateId === template.id
@@ -1568,7 +1590,7 @@ export default function App() {
 
     setPrinting(true)
     try {
-      const response = await postJson<PrintResult>('/api/print', {
+      const response = await printDocument({
         document: labelDocument,
         devicePathOverride: currentPrinter.devicePath,
       })
@@ -1585,7 +1607,7 @@ export default function App() {
   async function refreshPrinters() {
     setRefreshingPrinters(true)
     try {
-      const printers = await fetchJson<AppStateResponse['printers']>('/api/printers')
+      const printers = await fetchPrinters()
       setAppState((current) => (current ? { ...current, printers } : current))
       const onlineCount = printers.filter((printer) => printer.isAvailable).length
       setStatus(`已刷新打印机状态：${onlineCount}/${printers.length} 台在线。`)
@@ -3385,7 +3407,7 @@ function ContentValueInput({ value, groupIds, onChange }: { value: string; group
 
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      fetchJson<LexiconSuggestion[]>(`/api/lexicon-suggestions?groups=${encodeURIComponent(groupKey)}&q=${encodeURIComponent(value)}`, controller.signal)
+    fetchLexiconSuggestions(groupIds, value, controller.signal)
         .then((items) => {
           setSuggestions(items)
           setActiveIndex(0)
@@ -3621,7 +3643,7 @@ function ContentPicker({
     }
 
     const controller = new AbortController()
-    fetchJson<LexiconSuggestion[]>(`/api/lexicon-suggestions?groups=${encodeURIComponent(groupKey)}&q=${encodeURIComponent(query)}`, controller.signal)
+    fetchLexiconSuggestions(groupIds, query, controller.signal)
       .then(setSuggestions)
       .catch(() => undefined)
     return () => controller.abort()
@@ -3683,90 +3705,4 @@ function ContentPicker({
       )}
     </section>
   )
-}
-
-async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal })
-  if (!response.ok) {
-    throw new Error(await getResponseError(response))
-  }
-
-  return (await response.json()) as T
-}
-
-async function postJson<T>(url: string, payload: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
-
-  if (!response.ok) {
-    throw new Error(await getResponseError(response))
-  }
-
-  return (await response.json()) as T
-}
-
-async function putJson<T>(url: string, payload: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
-
-  if (!response.ok) {
-    throw new Error(await getResponseError(response))
-  }
-
-  return (await response.json()) as T
-}
-
-async function patchJson<TResponse, TPayload>(url: string, payload: TPayload): Promise<TResponse> {
-  const response = await fetch(url, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
-
-  if (!response.ok) {
-    throw new Error(await getResponseError(response))
-  }
-
-  return (await response.json()) as TResponse
-}
-
-async function deleteJson(url: string): Promise<void> {
-  const response = await fetch(url, {
-    method: 'DELETE',
-  })
-
-  if (!response.ok) {
-    throw new Error(await getResponseError(response))
-  }
-}
-
-async function getResponseError(response: Response) {
-  const text = await response.text()
-
-  try {
-    const parsed = JSON.parse(text) as { error?: string }
-    if (parsed.error) {
-      return parsed.error
-    }
-  } catch {
-    // Keep plain text below.
-  }
-
-  return text || '发生未知错误'
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : '发生未知错误'
 }
