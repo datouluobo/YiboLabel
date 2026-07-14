@@ -1,6 +1,7 @@
 using YiboLabel.App.Models;
 using YiboLabel.App.Services;
 using Microsoft.Extensions.FileProviders;
+using System.Reflection;
 
 var resolvedWebRoot = ResolveWebRoot();
 var builder = WebApplication.CreateBuilder(args);
@@ -49,6 +50,7 @@ app.MapGet("/api/app-state", async (PrinterDiscoveryService discoveryService, Pr
     return Results.Ok(new
     {
         appName = "YiboLabel",
+        appVersion = GetAppVersion(),
         printers = await discoveryService.GetKnownPrintersAsync(printAgentClient, cancellationToken),
         defaultWidthMm = 40,
         defaultHeightMm = 30,
@@ -191,18 +193,18 @@ app.MapPut("/api/templates/{id}", async (string id, SaveTemplateRequest request,
         return Results.BadRequest(new { error = validationError });
     }
 
-    var saved = await templateStore.UpdateAsync(id, request, cancellationToken);
+    var saved = await templateStore.SaveAsync(id, request, cancellationToken);
     return saved is null ? Results.NotFound() : Results.Ok(saved);
 });
 
-app.MapPatch("/api/templates/{id}/meta", async (string id, UpdateTemplateMetaRequest request, TemplateStore templateStore, CancellationToken cancellationToken) =>
+app.MapPatch("/api/templates/{id}/name", async (string id, RenameTemplateRequest request, TemplateStore templateStore, CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(request.Name))
     {
         return Results.BadRequest(new { error = "Template name is required." });
     }
 
-    var saved = await templateStore.UpdateMetaAsync(id, request, cancellationToken);
+    var saved = await templateStore.RenameAsync(id, request, cancellationToken);
     return saved is null ? Results.NotFound() : Results.Ok(saved);
 });
 
@@ -278,10 +280,10 @@ static string? ResolveWebRoot()
         return localWebRoot;
     }
 
-    var repoWebRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "src", "YiboLabel.App", "wwwroot"));
-    if (Directory.Exists(repoWebRoot))
+    var repoBuildWebRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "src", "YiboLabel.App", "bin", "Debug", "net10.0-windows", "wwwroot"));
+    if (Directory.Exists(repoBuildWebRoot))
     {
-        return repoWebRoot;
+        return repoBuildWebRoot;
     }
 
     return null;
@@ -300,4 +302,14 @@ static string? ValidateTemplateRequest(SaveTemplateRequest request)
     }
 
     return null;
+}
+
+static string GetAppVersion()
+{
+    var assembly = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+    return assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+        .InformationalVersion
+        ?? assembly.GetName().Version?.ToString()
+        ?? "dev";
 }

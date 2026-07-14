@@ -2,8 +2,8 @@ import type {
   DuplicateTemplateRequest,
   LabelTemplateRecord,
   LabelTemplateSummary,
+  RenameTemplateRequest,
   SaveTemplateRequest,
-  UpdateTemplateMetaRequest,
 } from '../types'
 import { deleteJson, fetchJson, patchJson, postJson, putJson } from './http'
 
@@ -23,8 +23,8 @@ export function updateTemplate(id: string, request: SaveTemplateRequest) {
   return putJson<LabelTemplateRecord>(`/api/templates/${id}`, request)
 }
 
-export function updateTemplateMeta(id: string, request: UpdateTemplateMetaRequest) {
-  return patchJson<LabelTemplateRecord, UpdateTemplateMetaRequest>(`/api/templates/${id}/meta`, request)
+export function renameTemplate(id: string, request: RenameTemplateRequest) {
+  return patchJson<LabelTemplateRecord, RenameTemplateRequest>(`/api/templates/${id}/name`, request)
 }
 
 export function duplicateTemplate(id: string, request: DuplicateTemplateRequest) {

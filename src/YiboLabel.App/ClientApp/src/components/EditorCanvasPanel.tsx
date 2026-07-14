@@ -11,6 +11,8 @@ type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type EditorCanvasPanelProps = {
   hasActiveTab: boolean
   labelDocument: LabelDocument
+  activeTemplateId: string | null
+  activeTabDirty: boolean
   selectedElementIds: string[]
   visibleElementsCount: number
   bindableSelectedCount: number
@@ -45,6 +47,8 @@ type EditorCanvasPanelProps = {
 export function EditorCanvasPanel({
   hasActiveTab,
   labelDocument,
+  activeTemplateId,
+  activeTabDirty,
   selectedElementIds,
   visibleElementsCount,
   bindableSelectedCount,
@@ -81,6 +85,14 @@ export function EditorCanvasPanel({
         <>
           <div className="canvas-toolbar canvas-toolbar-compact">
             <div className="canvas-toolbar-group">
+              <div className="document-state">
+                <span className={clsx('document-state-badge', activeTemplateId ? 'template' : 'draft')}>
+                  {activeTemplateId ? '模板草稿' : '未绑定草稿'}
+                </span>
+                <span className={clsx('document-state-badge', activeTabDirty ? 'dirty' : 'saved')}>
+                  {activeTabDirty ? '未保存修改' : '已保存'}
+                </span>
+              </div>
               <button className="mini-button" disabled={selectedElementIds.length === 0} onClick={onDuplicateSelected}>
                 复制所选
               </button>

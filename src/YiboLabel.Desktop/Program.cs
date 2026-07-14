@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
 using System.Runtime.InteropServices;
+using System.Reflection;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -43,7 +44,7 @@ internal sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "YiboLabel";
+        Text = $"YiboLabel {GetDesktopVersion()}";
         Width = 1600;
         Height = 980;
         StartPosition = FormStartPosition.CenterScreen;
@@ -252,6 +253,16 @@ internal sealed class MainForm : Form
         }
 
         return Screen.AllScreens.Any(screen => screen.WorkingArea.IntersectsWith(bounds));
+    }
+
+    private static string GetDesktopVersion()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        return assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion
+            ?? assembly.GetName().Version?.ToString()
+            ?? "dev";
     }
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs eventArgs)

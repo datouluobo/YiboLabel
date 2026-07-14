@@ -1,16 +1,11 @@
 import { Printer, RefreshCw, Save } from 'lucide-react'
 import clsx from 'clsx'
-import { formatTemplateSource, parseTagInput } from '../domain/templateMetadata'
 import type { ElementOverlapSummary } from '../domain/editorGeometry'
-import type { EditorTab } from '../domain/workspace'
 import type { AppStateResponse, LabelDocument } from '../types'
 
 type DocumentPrintDialogProps = {
   open: boolean
   labelDocument: LabelDocument
-  templateDescription: string
-  templateTags: string[]
-  templateSource: string
   activeTemplateId: string | null
   appState: AppStateResponse | null
   currentPrinter: AppStateResponse['printers'][number] | null
@@ -20,7 +15,6 @@ type DocumentPrintDialogProps = {
   printing: boolean
   onClose: () => void
   onDocumentFieldChange: <K extends keyof LabelDocument>(key: K, value: LabelDocument[K]) => void
-  onTemplateMetaChange: (patch: Partial<Pick<EditorTab, 'templateDescription' | 'templateTags' | 'templateSource'>>) => void
   onRefreshPrinters: () => void
   onSaveCurrentTemplate: () => void
   onSaveAsTemplate: () => void
@@ -30,9 +24,6 @@ type DocumentPrintDialogProps = {
 export function DocumentPrintDialog({
   open,
   labelDocument,
-  templateDescription,
-  templateTags,
-  templateSource,
   activeTemplateId,
   appState,
   currentPrinter,
@@ -42,7 +33,6 @@ export function DocumentPrintDialog({
   printing,
   onClose,
   onDocumentFieldChange,
-  onTemplateMetaChange,
   onRefreshPrinters,
   onSaveCurrentTemplate,
   onSaveAsTemplate,
@@ -65,22 +55,6 @@ export function DocumentPrintDialog({
           <label>
             模板名称
             <input value={labelDocument.name} onChange={(event) => onDocumentFieldChange('name', event.target.value)} />
-          </label>
-          <label>
-            模板说明
-            <textarea value={templateDescription} onChange={(event) => onTemplateMetaChange({ templateDescription: event.target.value })} placeholder="用于说明模板用途、内容或打印注意事项" />
-          </label>
-          <label>
-            模板标签
-            <input
-              value={templateTags.join(', ')}
-              onChange={(event) => onTemplateMetaChange({ templateTags: parseTagInput(event.target.value) })}
-              placeholder="例如：发货, 40x30, 条码"
-            />
-          </label>
-          <label>
-            模板来源
-            <input value={formatTemplateSource(templateSource)} disabled />
           </label>
           <div className="field-row">
             <label>

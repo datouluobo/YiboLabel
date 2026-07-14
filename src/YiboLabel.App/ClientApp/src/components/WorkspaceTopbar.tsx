@@ -8,9 +8,12 @@ type WorkspaceTopbarProps = {
   activeSurface: 'editor' | 'templates' | 'lexicons'
   showDocumentDialog: boolean
   hasActiveTab: boolean
+  status: string
   history: EditorTab['history']
   recentClosedTabsCount: number
   appState: AppStateResponse | null
+  activeDocumentName: string
+  activeTabDirty: boolean
   printerDevicePath: string
   currentPrinter: AppStateResponse['printers'][number] | null
   refreshingPrinters: boolean
@@ -34,9 +37,12 @@ export function WorkspaceTopbar({
   activeSurface,
   showDocumentDialog,
   hasActiveTab,
+  status,
   history,
   recentClosedTabsCount,
   appState,
+  activeDocumentName,
+  activeTabDirty,
   printerDevicePath,
   currentPrinter,
   refreshingPrinters,
@@ -68,7 +74,26 @@ export function WorkspaceTopbar({
           onDoubleClick={() => sendWindowChromeCommand('toggle-maximize')}
         >
           <span className="product-mark">YiboLabel</span>
-          <h1>YiboLabel</h1>
+          <div className="title-stack">
+            <div className="title-heading">
+              <h1>YiboLabel</h1>
+              {appState?.appVersion ? <span className="workspace-version">v{appState.appVersion}</span> : null}
+            </div>
+            <p className="status" title={status}>{status}</p>
+            {hasActiveTab ? (
+              <div className="workspace-badges">
+                <span className={clsx('workspace-badge', activeTemplateId ? 'template' : 'draft')}>
+                  {activeTemplateId ? '模板草稿' : '未绑定草稿'}
+                </span>
+                <span className={clsx('workspace-badge', activeTabDirty ? 'dirty' : 'saved')}>
+                  {activeTabDirty ? '未保存修改' : '已保存'}
+                </span>
+                <span className="workspace-document-name" title={activeDocumentName}>
+                  {activeDocumentName}
+                </span>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="topbar-actions command-bar">

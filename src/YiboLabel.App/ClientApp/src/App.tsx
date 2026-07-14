@@ -29,8 +29,8 @@ import {
   duplicateTemplate as duplicateTemplateRequest,
   fetchTemplate,
   fetchTemplates,
+  renameTemplate as renameTemplateRequest,
   updateTemplate,
-  updateTemplateMeta,
 } from './api/templatesApi'
 import { getErrorMessage } from './api/http'
 import { ContentPicker } from './components/ContentPicker'
@@ -91,7 +91,6 @@ import {
   sortElementsByListOrder,
 } from './domain/labelDocument'
 import {
-  applyTemplateMetaPatch,
   toTemplateSummary,
 } from './domain/templateMetadata'
 import {
@@ -116,14 +115,12 @@ import type {
   LexiconLibrary,
   LabelTemplateSummary,
   LexiconGroupSummary,
-  UpdateTemplateMetaRequest,
+  RenameTemplateRequest,
 } from './types'
 
 const baseCanvasScale = 16
 const emptySelectionIds: string[] = []
 const emptyHistoryState: EditorTab['history'] = { past: [], future: [] }
-const emptyTemplateTags: string[] = []
-
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
 type TemplateSort = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'created-desc' | 'created-asc'
@@ -187,7 +184,7 @@ export default function App() {
   const [activeSurface, setActiveSurface] = useState<WorkspaceSurface>('editor')
   const [lastEditorTabId, setLastEditorTabId] = useState<string | null>(null)
   const [recentClosedTabs, setRecentClosedTabs] = useState<ClosedTabSnapshot[]>([])
-  const [, setStatus] = useState('正在加载本地标签工作台...')
+  const [status, setStatus] = useState('正在加载本地标签工作台...')
   const [saving, setSaving] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [refreshingPrinters, setRefreshingPrinters] = useState(false)
@@ -207,12 +204,10 @@ export default function App() {
   const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? null, [activeTabId, tabs])
   const hasActiveTab = activeTab !== null
   const labelDocument = activeTab?.document ?? fallbackDocument
+  const activeDocumentName = activeTab?.document.name?.trim() || '未命名标签'
   const selectedElementIds = activeTab?.selectedElementIds ?? emptySelectionIds
   const history = activeTab?.history ?? emptyHistoryState
   const activeTemplateId = activeTab?.templateId ?? null
-  const templateDescription = activeTab?.templateDescription ?? ''
-  const templateTags = activeTab?.templateTags ?? emptyTemplateTags
-  const templateSource = activeTab?.templateSource ?? 'blank'
   const documentRef = useRef(labelDocument)
   const historyRef = useRef(history)
 
@@ -250,15 +245,12 @@ export default function App() {
     }
 
     const snapshot: WorkspaceSnapshot = {
-      version: 6,
+      version: 7,
       activeTabId,
       tabs: tabs.map((tab) => ({
         id: tab.id,
         templateId: tab.templateId,
         document: tab.document,
-        templateDescription: tab.templateDescription,
-        templateTags: tab.templateTags,
-        templateSource: tab.templateSource,
         selectedElementIds: tab.selectedElementIds,
         history: tab.history,
         lastSavedSnapshot: tab.lastSavedSnapshot,
@@ -305,9 +297,7 @@ export default function App() {
     const filtered = query.length === 0
       ? templates
       : templates.filter((template) =>
-          template.name.toLowerCase().includes(query)
-          || template.description.toLowerCase().includes(query)
-          || template.tags.some((tag) => tag.toLowerCase().includes(query)),
+          template.name.toLowerCase().includes(query),
         )
 
     const sorted = [...filtered]
@@ -368,6 +358,7 @@ export default function App() {
     () => (activeTab ? serializeTabSnapshot(activeTab) : ''),
     [activeTab],
   )
+  const activeTabDirty = activeTab ? isTabDirty(activeTab) : false
   const canvasScale = baseCanvasScale * canvasViewportScale * canvasUserZoom
 
   useEffect(() => {
@@ -468,10 +459,6 @@ export default function App() {
     setActiveSurface(surface)
   }
 
-  function setActiveTemplateMeta(patch: Partial<Pick<EditorTab, 'templateDescription' | 'templateTags' | 'templateSource'>>) {
-    updateActiveTab((tab) => applyTemplateMetaPatch(tab, patch))
-  }
-
   function toggleLexiconGroupForSelection(groupId: string) {
     if (bindableSelectedElements.length === 0) {
       return
@@ -546,9 +533,6 @@ export default function App() {
         {
           templateId: closingTab.templateId,
           document: normalizeDocument(closingTab.document),
-          templateDescription: closingTab.templateDescription,
-          templateTags: closingTab.templateTags,
-          templateSource: closingTab.templateSource,
           selectedElementIds: closingTab.selectedElementIds,
           lastSavedSnapshot: closingTab.lastSavedSnapshot,
         },
@@ -584,9 +568,6 @@ export default function App() {
 
     const reopenedTab = createEditorTab(nextClosedTab.document, {
       templateId: nextClosedTab.templateId,
-      templateDescription: nextClosedTab.templateDescription,
-      templateTags: nextClosedTab.templateTags,
-      templateSource: nextClosedTab.templateSource,
       selectedElementIds: nextClosedTab.selectedElementIds,
     })
 
@@ -891,16 +872,10 @@ export default function App() {
       }
 
       if (templatesResponse.length > 0) {
-        const template = await fetchTemplate(templatesResponse[0].id)
-        const tab = createEditorTab(template.document, {
-          templateId: template.id,
-          templateDescription: template.description,
-          templateTags: template.tags,
-          templateSource: template.source,
-        })
-        setTabs([tab])
-        setActiveTabId(tab.id)
-        setStatus(`已加载模板：${template.name}`)
+        setTabs([])
+        setActiveTabId(null)
+        setActiveSurface('templates')
+        setStatus(`已加载模板库，共 ${templatesResponse.length} 个模板。`)
         return
       }
 
@@ -1068,9 +1043,6 @@ export default function App() {
     const normalized = normalizeDocument(saved.document)
     const savedSnapshot = serializeTabSnapshot({
       document: normalized,
-      templateDescription: saved.description,
-      templateTags: saved.tags,
-      templateSource: saved.source,
     })
 
     setTabs((currentTabs) =>
@@ -1085,9 +1057,6 @@ export default function App() {
             ...tab,
             templateId: saved.id,
             document: normalized,
-            templateDescription: saved.description,
-            templateTags: saved.tags,
-            templateSource: saved.source,
             lastSavedSnapshot: savedSnapshot,
           }
         }
@@ -1095,9 +1064,6 @@ export default function App() {
         return {
           ...tab,
           templateId: saved.id,
-          templateDescription: saved.description,
-          templateTags: saved.tags,
-          templateSource: saved.source,
           lastSavedSnapshot: savedSnapshot,
         }
       }),
@@ -1117,9 +1083,6 @@ export default function App() {
     openTab(
       createEditorTab(normalized, {
         templateId: template.id,
-        templateDescription: template.description,
-        templateTags: template.tags,
-        templateSource: template.source,
       }),
     )
     setStatus(`已加载模板：${template.name}`)
@@ -1141,9 +1104,6 @@ export default function App() {
     try {
       const saved = await updateTemplate(activeTemplateId, {
         name: labelDocument.name,
-        description: templateDescription,
-        tags: templateTags,
-        source: templateSource,
         document: labelDocument,
       })
 
@@ -1176,9 +1136,6 @@ export default function App() {
     try {
       const saved = await createTemplate({
         name: targetName,
-        description: templateDescription,
-        tags: templateTags,
-        source: activeTemplateId ? 'duplicate' : templateSource === 'blank' ? 'manual' : templateSource,
         document: {
           ...labelDocument,
           name: targetName,
@@ -1204,11 +1161,9 @@ export default function App() {
     }
 
     try {
-      const saved = await updateTemplateMeta(template.id, {
+      const saved = await renameTemplateRequest(template.id, {
         name: nextName,
-        description: template.description,
-        tags: template.tags,
-      } satisfies UpdateTemplateMetaRequest)
+      } satisfies RenameTemplateRequest)
 
       setTabs((currentTabs) =>
         currentTabs.map((tab) => {
@@ -1223,17 +1178,11 @@ export default function App() {
               ...tab.document,
               name: saved.name,
             }),
-            templateDescription: saved.description,
-            templateTags: saved.tags,
-            templateSource: saved.source,
             lastSavedSnapshot: serializeTabSnapshot({
               document: {
                 ...(lastSavedDocument ?? tab.document),
                 name: saved.name,
               },
-              templateDescription: saved.description,
-              templateTags: saved.tags,
-              templateSource: saved.source,
             }),
           }
         }),
@@ -1256,16 +1205,7 @@ export default function App() {
         name: nextName,
       } as DuplicateTemplateRequest)
       await refreshTemplateLibrary()
-      openTab(
-        createEditorTab(duplicated.document, {
-          templateId: duplicated.id,
-          templateDescription: duplicated.description,
-          templateTags: duplicated.tags,
-          templateSource: duplicated.source,
-        }),
-      )
-      setActiveSurface('editor')
-      setStatus(`已复制模板：${duplicated.name}`)
+      setStatus(`已复制模板：${duplicated.name}。可在模板库中打开。`)
     } catch (error) {
       setStatus(getErrorMessage(error))
     }
@@ -1285,12 +1225,8 @@ export default function App() {
             ? {
                 ...tab,
                 templateId: null,
-                templateSource: 'manual',
                 lastSavedSnapshot: serializeTabSnapshot({
                   document: tab.document,
-                  templateDescription: tab.templateDescription,
-                  templateTags: tab.templateTags,
-                  templateSource: 'manual',
                 }),
               }
             : tab,
@@ -1351,7 +1287,7 @@ export default function App() {
   function createFreshDocument() {
     const next = createBlankDocument('快速标签')
     next.printerDevicePath = labelDocument.printerDevicePath
-    openTab(createEditorTab(next, { templateId: null, templateSource: 'blank' }))
+    openTab(createEditorTab(next, { templateId: null }))
     setStatus('已新建标签。')
   }
 
@@ -1400,7 +1336,7 @@ export default function App() {
         clamp,
         createId,
       })
-      openTab(createEditorTab(imported.document, { templateId: null, templateSource: 'ddl-import', templateDescription: imported.warnings.join('；') }))
+      openTab(createEditorTab(imported.document, { templateId: null }))
       queueActivity(`已导入 DDL：${imported.document.name}`)
       setStatus(
         imported.warnings.length > 0
@@ -1757,9 +1693,12 @@ export default function App() {
         activeSurface={activeSurface}
         showDocumentDialog={showDocumentDialog}
         hasActiveTab={hasActiveTab}
+        status={status}
         history={history}
         recentClosedTabsCount={recentClosedTabs.length}
         appState={appState}
+        activeDocumentName={activeDocumentName}
+        activeTabDirty={activeTabDirty}
         printerDevicePath={labelDocument.printerDevicePath ?? appState?.printers[0]?.devicePath ?? ''}
         currentPrinter={currentPrinter}
         refreshingPrinters={refreshingPrinters}
@@ -1865,6 +1804,8 @@ export default function App() {
             <EditorCanvasPanel
               hasActiveTab={hasActiveTab}
               labelDocument={labelDocument}
+              activeTemplateId={activeTemplateId}
+              activeTabDirty={activeTabDirty}
               selectedElementIds={selectedElementIds}
               visibleElementsCount={visibleElements.length}
               bindableSelectedCount={bindableSelectedElements.length}
@@ -1957,9 +1898,6 @@ export default function App() {
       <DocumentPrintDialog
         open={showDocumentDialog && hasActiveTab}
         labelDocument={labelDocument}
-        templateDescription={templateDescription}
-        templateTags={templateTags}
-        templateSource={templateSource}
         activeTemplateId={activeTemplateId}
         appState={appState}
         currentPrinter={currentPrinter}
@@ -1969,7 +1907,6 @@ export default function App() {
         printing={printing}
         onClose={() => setShowDocumentDialog(false)}
         onDocumentFieldChange={setDocumentField}
-        onTemplateMetaChange={setActiveTemplateMeta}
         onRefreshPrinters={() => void refreshPrinters()}
         onSaveCurrentTemplate={() => void saveCurrentTemplate()}
         onSaveAsTemplate={() => void saveAsTemplate()}

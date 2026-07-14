@@ -11,6 +11,7 @@ export interface PrinterEndpoint {
 
 export interface AppStateResponse {
   appName: string
+  appVersion: string
   printers: PrinterEndpoint[]
   defaultWidthMm: number
   defaultHeightMm: number
@@ -20,12 +21,8 @@ export interface AppStateResponse {
 export interface LabelTemplateSummary {
   id: string
   name: string
-  description: string
-  tags: string[]
-  source: string
   createdAt: string
   updatedAt: string
-  lastUsedAt?: string | null
   widthMm: number
   heightMm: number
   elementCount: number
@@ -35,12 +32,8 @@ export interface LabelTemplateRecord {
   id: string
   schemaVersion: number
   name: string
-  description: string
-  tags: string[]
-  source: string
   createdAt: string
   updatedAt: string
-  lastUsedAt?: string | null
   document: LabelDocument
 }
 
@@ -121,18 +114,12 @@ export type LabelElement =
   | ImageElement
 
 export interface SaveTemplateRequest {
-  id?: string
   name: string
-  description?: string
-  tags?: string[]
-  source?: string
   document: LabelDocument
 }
 
-export interface UpdateTemplateMetaRequest {
+export interface RenameTemplateRequest {
   name: string
-  description?: string
-  tags?: string[]
 }
 
 export interface DuplicateTemplateRequest {

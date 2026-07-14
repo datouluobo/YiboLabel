@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/YiboLabel.App/YiboLabel.App.csproj" />
+    <Project Path="src/YiboLabel.App.Tests/YiboLabel.App.Tests.csproj" />
     <Project Path="src/YiboLabel.Desktop/YiboLabel.Desktop.csproj" />
     <Project Path="src/YiboLabel.PrintAgent/YiboLabel.PrintAgent.csproj" />
     <Project Path="src/YiboLabel.PrintCore/YiboLabel.PrintCore.csproj" />

@@ -8,17 +8,9 @@ public sealed class LabelTemplateSummary
 
     public required string Name { get; init; }
 
-    public string Description { get; init; } = string.Empty;
-
-    public required List<string> Tags { get; init; }
-
-    public string Source { get; init; } = "manual";
-
     public required DateTimeOffset CreatedAt { get; init; }
 
     public required DateTimeOffset UpdatedAt { get; init; }
-
-    public DateTimeOffset? LastUsedAt { get; init; }
 
     public required double WidthMm { get; init; }
 
@@ -33,19 +25,11 @@ public sealed class LabelTemplateRecord
 
     public required string Name { get; init; }
 
-    public int SchemaVersion { get; init; } = 3;
-
-    public string Description { get; init; } = string.Empty;
-
-    public required List<string> Tags { get; init; }
-
-    public string Source { get; init; } = "manual";
+    public int SchemaVersion { get; init; } = 1;
 
     public required DateTimeOffset CreatedAt { get; init; }
 
     public required DateTimeOffset UpdatedAt { get; init; }
-
-    public DateTimeOffset? LastUsedAt { get; init; }
 
     public required LabelDocument Document { get; init; }
 }
@@ -69,13 +53,7 @@ public sealed class LabelDocument
     public required List<LabelElement> Elements { get; init; }
 }
 
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
-[JsonDerivedType(typeof(TextElement), "text")]
-[JsonDerivedType(typeof(BarcodeElement), "barcode")]
-[JsonDerivedType(typeof(QrCodeElement), "qrcode")]
-[JsonDerivedType(typeof(LineElement), "line")]
-[JsonDerivedType(typeof(RectangleElement), "rectangle")]
-[JsonDerivedType(typeof(ImageElement), "image")]
+[JsonConverter(typeof(LabelElementJsonConverter))]
 public abstract class LabelElement
 {
     public required string Id { get; init; }
@@ -172,26 +150,14 @@ public sealed class PrinterEndpoint
 
 public sealed class SaveTemplateRequest
 {
-    public string? Id { get; init; }
-
     public required string Name { get; init; }
-
-    public string? Description { get; init; }
-
-    public List<string>? Tags { get; init; }
-
-    public string? Source { get; init; }
 
     public required LabelDocument Document { get; init; }
 }
 
-public sealed class UpdateTemplateMetaRequest
+public sealed class RenameTemplateRequest
 {
     public required string Name { get; init; }
-
-    public string? Description { get; init; }
-
-    public List<string>? Tags { get; init; }
 }
 
 public sealed class DuplicateTemplateRequest

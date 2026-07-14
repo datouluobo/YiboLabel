@@ -5,7 +5,7 @@ namespace YiboLabel.App.Services;
 
 public sealed class TemplateStore
 {
-    private const int CurrentSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 1;
 
     private readonly JsonSerializerOptions serializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -13,12 +13,26 @@ public sealed class TemplateStore
     };
 
     public TemplateStore()
+        : this(null)
     {
-        Directory.CreateDirectory(TemplateDirectory);
-        SeedIfEmpty();
     }
 
-    public string RootDirectory { get; } = ResolveDataRoot();
+    internal TemplateStore(string? rootDirectory)
+        : this(rootDirectory, true)
+    {
+    }
+
+    internal TemplateStore(string? rootDirectory, bool seedIfEmpty)
+    {
+        RootDirectory = string.IsNullOrWhiteSpace(rootDirectory) ? ResolveDataRoot() : rootDirectory;
+        Directory.CreateDirectory(TemplateDirectory);
+        if (seedIfEmpty)
+        {
+            SeedIfEmpty();
+        }
+    }
+
+    public string RootDirectory { get; }
 
     public string TemplateDirectory => Path.Combine(RootDirectory, "templates");
 
@@ -35,7 +49,7 @@ public sealed class TemplateStore
             }
             catch
             {
-                // Skip unreadable templates so one bad file does not break the whole library.
+                // Ignore malformed template files so the library remains usable.
             }
         }
 
@@ -52,31 +66,29 @@ public sealed class TemplateStore
     public async Task<LabelTemplateRecord> CreateAsync(SaveTemplateRequest request, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.Now;
-        var id = CreateTemplateId(request.Name);
+        var normalizedName = request.Name.Trim();
+        var id = CreateTemplateId();
+
         while (File.Exists(GetTemplatePath(id)))
         {
-            id = CreateTemplateId(request.Name);
+            id = CreateTemplateId();
         }
 
         var record = new LabelTemplateRecord
         {
             Id = id,
             SchemaVersion = CurrentSchemaVersion,
-            Name = request.Name.Trim(),
-            Description = request.Description?.Trim() ?? string.Empty,
-            Tags = NormalizeTags(request.Tags),
-            Source = NormalizeSource(request.Source, "manual"),
+            Name = normalizedName,
             CreatedAt = now,
             UpdatedAt = now,
-            LastUsedAt = null,
-            Document = request.Document.WithName(request.Name.Trim())
+            Document = request.Document.WithName(normalizedName)
         };
 
         await SaveRecordAsync(record, cancellationToken);
         return record;
     }
 
-    public async Task<LabelTemplateRecord?> UpdateAsync(string id, SaveTemplateRequest request, CancellationToken cancellationToken)
+    public async Task<LabelTemplateRecord?> SaveAsync(string id, SaveTemplateRequest request, CancellationToken cancellationToken)
     {
         var existing = await GetAsync(id, cancellationToken);
         if (existing is null)
@@ -84,25 +96,22 @@ public sealed class TemplateStore
             return null;
         }
 
+        var normalizedName = request.Name.Trim();
         var record = new LabelTemplateRecord
         {
             Id = existing.Id,
             SchemaVersion = CurrentSchemaVersion,
-            Name = request.Name.Trim(),
-            Description = request.Description?.Trim() ?? existing.Description,
-            Tags = request.Tags is null ? existing.Tags : NormalizeTags(request.Tags),
-            Source = NormalizeSource(request.Source, existing.Source),
+            Name = normalizedName,
             CreatedAt = existing.CreatedAt,
             UpdatedAt = DateTimeOffset.Now,
-            LastUsedAt = existing.LastUsedAt,
-            Document = request.Document.WithName(request.Name.Trim())
+            Document = request.Document.WithName(normalizedName)
         };
 
         await SaveRecordAsync(record, cancellationToken);
         return record;
     }
 
-    public async Task<LabelTemplateRecord?> UpdateMetaAsync(string id, UpdateTemplateMetaRequest request, CancellationToken cancellationToken)
+    public async Task<LabelTemplateRecord?> RenameAsync(string id, RenameTemplateRequest request, CancellationToken cancellationToken)
     {
         var existing = await GetAsync(id, cancellationToken);
         if (existing is null)
@@ -110,18 +119,15 @@ public sealed class TemplateStore
             return null;
         }
 
+        var normalizedName = request.Name.Trim();
         var record = new LabelTemplateRecord
         {
             Id = existing.Id,
             SchemaVersion = CurrentSchemaVersion,
-            Name = request.Name.Trim(),
-            Description = request.Description?.Trim() ?? string.Empty,
-            Tags = NormalizeTags(request.Tags),
-            Source = existing.Source,
+            Name = normalizedName,
             CreatedAt = existing.CreatedAt,
             UpdatedAt = DateTimeOffset.Now,
-            LastUsedAt = existing.LastUsedAt,
-            Document = existing.Document.WithName(request.Name.Trim())
+            Document = existing.Document.WithName(normalizedName)
         };
 
         await SaveRecordAsync(record, cancellationToken);
@@ -136,17 +142,11 @@ public sealed class TemplateStore
             return null;
         }
 
-        var duplicateName = string.IsNullOrWhiteSpace(newName) ? $"{existing.Name} 副本" : newName.Trim();
-        var request = new SaveTemplateRequest
+        return await CreateAsync(new SaveTemplateRequest
         {
-            Name = duplicateName,
-            Description = existing.Description,
-            Tags = existing.Tags,
-            Source = "duplicate",
-            Document = existing.Document.WithName(duplicateName)
-        };
-
-        return await CreateAsync(request, cancellationToken);
+            Name = string.IsNullOrWhiteSpace(newName) ? $"{existing.Name} 副本" : newName.Trim(),
+            Document = existing.Document.WithName(string.IsNullOrWhiteSpace(newName) ? $"{existing.Name} 副本" : newName.Trim())
+        }, cancellationToken);
     }
 
     public Task<bool> DeleteAsync(string id, CancellationToken cancellationToken)
@@ -171,9 +171,7 @@ public sealed class TemplateStore
 
         var term = query.Trim();
         return records.Where(record =>
-            record.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
-            || record.Description.Contains(term, StringComparison.OrdinalIgnoreCase)
-            || record.Tags.Any(tag => tag.Contains(term, StringComparison.OrdinalIgnoreCase)));
+            record.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
     private static IEnumerable<LabelTemplateSummary> ApplySort(IEnumerable<LabelTemplateSummary> records, string? sort)
@@ -192,23 +190,23 @@ public sealed class TemplateStore
     private async Task SaveRecordAsync(LabelTemplateRecord record, CancellationToken cancellationToken)
     {
         var payload = JsonSerializer.Serialize(ToFileRecord(record), serializerOptions);
-        await File.WriteAllTextAsync(GetTemplatePath(record.Id), payload, cancellationToken);
+        var targetPath = GetTemplatePath(record.Id);
+        var tempPath = $"{targetPath}.{Guid.NewGuid():N}.tmp";
+
+        await File.WriteAllTextAsync(tempPath, payload, cancellationToken);
+        File.Move(tempPath, targetPath, true);
     }
 
     private async Task<LabelTemplateRecord> LoadRecordAsync(string filePath, CancellationToken cancellationToken)
     {
         var payload = await File.ReadAllTextAsync(filePath, cancellationToken);
 
-        var fileRecord = JsonSerializer.Deserialize<TemplateFileRecord>(payload, serializerOptions);
-        if (fileRecord is not null && fileRecord.SchemaVersion >= CurrentSchemaVersion && fileRecord.Meta is not null)
+        var current = JsonSerializer.Deserialize<TemplateFileRecord>(payload, serializerOptions);
+        if (current is null || current.SchemaVersion != CurrentSchemaVersion)
         {
-            return FromFileRecord(fileRecord);
+            throw new InvalidOperationException($"Unsupported template schema in {filePath}.");
         }
-
-        var legacyRecord = JsonSerializer.Deserialize<LegacyLabelTemplateRecord>(payload, serializerOptions)
-            ?? throw new InvalidOperationException($"Failed to deserialize template: {filePath}");
-
-        return FromLegacyRecord(legacyRecord);
+        return FromFileRecord(current);
     }
 
     private static TemplateFileRecord ToFileRecord(LabelTemplateRecord record)
@@ -217,16 +215,9 @@ public sealed class TemplateStore
         {
             SchemaVersion = CurrentSchemaVersion,
             Id = record.Id,
-            Meta = new TemplateFileMeta
-            {
-                Name = record.Name,
-                Description = record.Description,
-                Tags = record.Tags,
-                Source = record.Source,
-                CreatedAt = record.CreatedAt,
-                UpdatedAt = record.UpdatedAt,
-                LastUsedAt = record.LastUsedAt
-            },
+            Name = record.Name,
+            CreatedAt = record.CreatedAt,
+            UpdatedAt = record.UpdatedAt,
             Document = record.Document.WithName(record.Name)
         };
     }
@@ -237,30 +228,9 @@ public sealed class TemplateStore
         {
             Id = record.Id,
             SchemaVersion = record.SchemaVersion,
-            Name = record.Meta.Name,
-            Description = record.Meta.Description,
-            Tags = NormalizeTags(record.Meta.Tags),
-            Source = NormalizeSource(record.Meta.Source, "manual"),
-            CreatedAt = record.Meta.CreatedAt,
-            UpdatedAt = record.Meta.UpdatedAt,
-            LastUsedAt = record.Meta.LastUsedAt,
-            Document = record.Document.WithName(record.Meta.Name)
-        };
-    }
-
-    private static LabelTemplateRecord FromLegacyRecord(LegacyLabelTemplateRecord record)
-    {
-        return new LabelTemplateRecord
-        {
-            Id = record.Id,
-            SchemaVersion = CurrentSchemaVersion,
             Name = record.Name,
-            Description = string.Empty,
-            Tags = [],
-            Source = "manual",
             CreatedAt = record.CreatedAt,
             UpdatedAt = record.UpdatedAt,
-            LastUsedAt = null,
             Document = record.Document.WithName(record.Name)
         };
     }
@@ -271,12 +241,8 @@ public sealed class TemplateStore
         {
             Id = record.Id,
             Name = record.Name,
-            Description = record.Description,
-            Tags = record.Tags,
-            Source = record.Source,
             CreatedAt = record.CreatedAt,
             UpdatedAt = record.UpdatedAt,
-            LastUsedAt = record.LastUsedAt,
             WidthMm = record.Document.WidthMm,
             HeightMm = record.Document.HeightMm,
             ElementCount = record.Document.Elements.Count
@@ -285,30 +251,9 @@ public sealed class TemplateStore
 
     private string GetTemplatePath(string id) => Path.Combine(TemplateDirectory, $"{id}.json");
 
-    private static string CreateTemplateId(string name)
+    private static string CreateTemplateId()
     {
-        var safeName = string.Concat(name.Trim().ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')).Trim('-');
-        if (string.IsNullOrWhiteSpace(safeName))
-        {
-            safeName = "label";
-        }
-
-        return $"{safeName}-{DateTimeOffset.Now:yyyyMMddHHmmssfff}";
-    }
-
-    private static List<string> NormalizeTags(IEnumerable<string>? tags)
-    {
-        return tags?
-            .Select(tag => tag.Trim())
-            .Where(tag => !string.IsNullOrWhiteSpace(tag))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList()
-            ?? [];
-    }
-
-    private static string NormalizeSource(string? source, string fallback)
-    {
-        return string.IsNullOrWhiteSpace(source) ? fallback : source.Trim().ToLowerInvariant();
+        return $"template-{DateTimeOffset.Now:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}";
     }
 
     private void SeedIfEmpty()
@@ -318,10 +263,9 @@ public sealed class TemplateStore
             return;
         }
 
-        var sample = new SaveTemplateRequest
+        CreateAsync(new SaveTemplateRequest
         {
             Name = "Shipping Hello",
-            Source = "seed",
             Document = new LabelDocument
             {
                 Name = "Shipping Hello",
@@ -386,9 +330,7 @@ public sealed class TemplateStore
                     }
                 ]
             }
-        };
-
-        CreateAsync(sample, CancellationToken.None).GetAwaiter().GetResult();
+        }, CancellationToken.None).GetAwaiter().GetResult();
     }
 
     private static string ResolveDataRoot()
@@ -423,34 +365,8 @@ file static class LabelDocumentExtensions
 
 internal sealed class TemplateFileRecord
 {
-    public int SchemaVersion { get; init; } = 3;
+    public int SchemaVersion { get; init; } = 1;
 
-    public required string Id { get; init; }
-
-    public required TemplateFileMeta Meta { get; init; }
-
-    public required LabelDocument Document { get; init; }
-}
-
-internal sealed class TemplateFileMeta
-{
-    public required string Name { get; init; }
-
-    public string Description { get; init; } = string.Empty;
-
-    public required List<string> Tags { get; init; }
-
-    public string Source { get; init; } = "manual";
-
-    public required DateTimeOffset CreatedAt { get; init; }
-
-    public required DateTimeOffset UpdatedAt { get; init; }
-
-    public DateTimeOffset? LastUsedAt { get; init; }
-}
-
-internal sealed class LegacyLabelTemplateRecord
-{
     public required string Id { get; init; }
 
     public required string Name { get; init; }

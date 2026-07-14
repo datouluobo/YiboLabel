@@ -102,16 +102,18 @@ export function normalizeDocument(document: LabelDocument): LabelDocument {
 }
 
 export function normalizeElement(element: LabelElement, document: LabelDocument, index: number): LabelElement {
+  const normalizedType = coerceElementType(element)
   const widthLimit = Math.max(minElementSizeMm, document.widthMm)
   const heightLimit = Math.max(minElementSizeMm, document.heightMm)
   const width = clamp(roundTo(element.width || minElementSizeMm, 0.1), minElementSizeMm, widthLimit)
   const unclampedHeight = clamp(roundTo(element.height || minElementSizeMm, 0.1), minElementSizeMm, heightLimit)
   const x = clamp(roundTo(element.x || 0, 0.1), 0, Math.max(0, document.widthMm - width))
-  const defaultHeight = element.type === 'line' ? 0.8 : unclampedHeight
+  const defaultHeight = normalizedType === 'line' ? 0.8 : unclampedHeight
   const height = clamp(roundTo(defaultHeight, 0.1), minElementSizeMm, heightLimit)
   const y = clamp(roundTo(element.y || 0, 0.1), 0, Math.max(0, document.heightMm - height))
   const common = {
     ...element,
+    type: normalizedType,
     name: element.name?.trim() || getDefaultElementName(element.type),
     x,
     y,
@@ -125,30 +127,33 @@ export function normalizeElement(element: LabelElement, document: LabelDocument,
     defaultLexiconGroupId: element.defaultLexiconGroupId ?? null,
   }
 
-  if (element.type === 'text') {
+  if (normalizedType === 'text') {
+    const textElement = element as Partial<TextElement>
     return {
       ...common,
-      text: element.text ?? '',
-      fontSize: clamp(Math.round(element.fontSize || 22), 8, 96),
-      bold: Boolean(element.bold),
-      align: element.align === 'center' || element.align === 'right' ? element.align : 'left',
+      text: textElement.text ?? '',
+      fontSize: clamp(Math.round(textElement.fontSize || 22), 8, 96),
+      bold: Boolean(textElement.bold),
+      align: textElement.align === 'center' || textElement.align === 'right' ? textElement.align : 'left',
     } as TextElement
   }
 
-  if (element.type === 'barcode') {
+  if (normalizedType === 'barcode') {
+    const barcodeElement = element as Partial<BarcodeElement>
     return {
       ...common,
-      value: element.value ?? '',
-      symbology: element.symbology?.trim() || '128',
-      showHumanReadable: Boolean(element.showHumanReadable),
-      textPosition: element.textPosition === 'top' ? 'top' : 'bottom',
-      humanReadableFontSize: clamp(Math.round(element.humanReadableFontSize || 12), 8, 36),
+      value: barcodeElement.value ?? '',
+      symbology: barcodeElement.symbology?.trim() || '128',
+      showHumanReadable: Boolean(barcodeElement.showHumanReadable),
+      textPosition: barcodeElement.textPosition === 'top' ? 'top' : 'bottom',
+      humanReadableFontSize: clamp(Math.round(barcodeElement.humanReadableFontSize || 12), 8, 36),
     } as BarcodeElement
   }
 
-  if (element.type === 'qrcode') {
-    const humanReadableFontSize = clamp(Math.round(element.humanReadableFontSize || 12), 8, 36)
-    const showHumanReadable = Boolean(element.showHumanReadable)
+  if (normalizedType === 'qrcode') {
+    const qrElement = element as Partial<QrCodeElement>
+    const humanReadableFontSize = clamp(Math.round(qrElement.humanReadableFontSize || 12), 8, 36)
+    const showHumanReadable = Boolean(qrElement.showHumanReadable)
     const textHeight = showHumanReadable ? getQrTextHeightMm(humanReadableFontSize) : 0
     const maxCoreSize = Math.max(minElementSizeMm, Math.min(document.widthMm, document.heightMm - textHeight))
     const coreSize = clamp(roundTo(common.width, 0.1), minElementSizeMm, maxCoreSize)
@@ -161,33 +166,68 @@ export function normalizeElement(element: LabelElement, document: LabelDocument,
       height: elementHeight,
       x: clamp(common.x, 0, Math.max(0, document.widthMm - coreSize)),
       y: clamp(common.y, 0, Math.max(0, document.heightMm - elementHeight)),
-      value: element.value ?? '',
+      value: qrElement.value ?? '',
       showHumanReadable,
-      textPosition: element.textPosition === 'top' ? 'top' : 'bottom',
+      textPosition: qrElement.textPosition === 'top' ? 'top' : 'bottom',
       humanReadableFontSize,
     } as QrCodeElement
   }
 
-  if (element.type === 'line') {
+  if (normalizedType === 'line') {
+    const lineElement = element as Partial<LineElement>
     return {
       ...common,
       height: clamp(common.height, minElementSizeMm, document.heightMm),
-      thickness: clamp(Math.round(element.thickness || 1), 1, 8),
+      thickness: clamp(Math.round(lineElement.thickness || 1), 1, 8),
     } as LineElement
   }
 
-  if (element.type === 'rectangle') {
+  if (normalizedType === 'rectangle') {
+    const rectangleElement = element as Partial<RectangleElement>
     return {
       ...common,
-      thickness: clamp(Math.round(element.thickness || 1), 1, 8),
+      thickness: clamp(Math.round(rectangleElement.thickness || 1), 1, 8),
     } as RectangleElement
   }
 
+  const imageElement = element as Partial<ImageElement>
   return {
     ...common,
-    dataUrl: element.dataUrl ?? '',
-    invert: Boolean(element.invert),
+    type: 'image',
+    dataUrl: imageElement.dataUrl ?? '',
+    invert: Boolean(imageElement.invert),
   } as ImageElement
+}
+
+function coerceElementType(element: Partial<LabelElement>) {
+  if (
+    element.type === 'text'
+    || element.type === 'barcode'
+    || element.type === 'qrcode'
+    || element.type === 'line'
+    || element.type === 'rectangle'
+    || element.type === 'image'
+  ) {
+    return element.type
+  }
+
+  if ('text' in element) {
+    return 'text'
+  }
+
+  if ('dataUrl' in element) {
+    return 'image'
+  }
+
+  if ('value' in element) {
+    return 'symbology' in element ? 'barcode' : 'qrcode'
+  }
+
+  if ('thickness' in element) {
+    return (element.width ?? 0) <= 1.5 || (element.height ?? 0) <= 1.5 ? 'line' : 'rectangle'
+  }
+
+  return 'text'
 }
 
 export function normalizeLayerOrder(elements: LabelElement[]) {

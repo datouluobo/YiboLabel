@@ -1,6 +1,5 @@
 import { FilePlus2, Upload } from 'lucide-react'
 import clsx from 'clsx'
-import { formatTemplateSource } from '../domain/templateMetadata'
 import type { LabelTemplateSummary } from '../types'
 
 type TemplateOpenState = {
@@ -61,7 +60,7 @@ export function TemplateLibraryView({
       <div className="field-row">
         <label>
           搜索模板
-          <input value={templateQuery} onChange={(event) => onTemplateQueryChange(event.target.value)} placeholder="按名称、描述或标签搜索" />
+          <input value={templateQuery} onChange={(event) => onTemplateQueryChange(event.target.value)} placeholder="按名称搜索" />
         </label>
         <label>
           排序
@@ -96,6 +95,11 @@ export function TemplateLibraryView({
         ) : (
           visibleTemplates.map((template) => {
             const openedState = openedTemplateState.get(template.id)
+            const primaryActionLabel = openedState?.current
+              ? '返回当前草稿'
+              : openedState?.openCount
+                ? '打开草稿'
+                : '打开模板'
             return (
               <div
                 key={template.id}
@@ -118,13 +122,22 @@ export function TemplateLibraryView({
                     {openedState?.dirty ? <span className="template-flag dirty">有修改</span> : null}
                   </div>
                 </div>
-                <span>{template.description || `来源：${formatTemplateSource(template.source)}`}</span>
+                <span>本地模板</span>
                 <span>
                   {template.widthMm} × {template.heightMm} mm · {template.elementCount} 个元素
                 </span>
-                {template.tags.length > 0 ? <small>标签：{template.tags.join('、')}</small> : null}
                 <small>更新于 {new Date(template.updatedAt).toLocaleString()}</small>
                 <div className="command-bar">
+                  <button
+                    className="mini-button"
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onOpenTemplate(template.id)
+                    }}
+                  >
+                    {primaryActionLabel}
+                  </button>
                   <button
                     className="mini-button"
                     type="button"
