@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { fetchLexiconSuggestions } from '../api/lexiconsApi'
 import type { LexiconSuggestion } from '../types'
@@ -14,16 +14,17 @@ export function ContentValueInput({ value, groupIds, onChange }: ContentValueInp
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const groupKey = groupIds.join(',')
+  const normalizedGroupIds = useMemo(() => groupIds.filter(Boolean), [groupIds])
 
   useEffect(() => {
-    if (groupIds.length === 0) {
+    if (normalizedGroupIds.length === 0) {
       setSuggestions([])
       return
     }
 
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      fetchLexiconSuggestions(groupIds, value, controller.signal)
+      fetchLexiconSuggestions(normalizedGroupIds, value, controller.signal)
         .then((items) => {
           setSuggestions(items)
           setActiveIndex(0)
@@ -35,7 +36,7 @@ export function ContentValueInput({ value, groupIds, onChange }: ContentValueInp
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [groupIds.length, groupKey, value])
+  }, [groupKey, normalizedGroupIds, value])
 
   function commitSuggestion(index: number) {
     const suggestion = suggestions[index]

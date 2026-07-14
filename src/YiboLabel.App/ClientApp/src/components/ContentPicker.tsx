@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { fetchLexiconSuggestions } from '../api/lexiconsApi'
 import type { Point } from '../domain/editorGeometry'
 import { clamp, isLexiconEnabledElement } from '../domain/labelDocument'
@@ -25,7 +25,7 @@ export function ContentPicker({
 }: ContentPickerProps) {
   const [suggestions, setSuggestions] = useState<LexiconSuggestion[]>([])
   const [query, setQuery] = useState('')
-  const groupIds = isLexiconEnabledElement(element) ? element.lexiconGroupIds ?? [] : []
+  const groupIds = useMemo(() => (isLexiconEnabledElement(element) ? element.lexiconGroupIds ?? [] : []), [element])
   const groupKey = groupIds.join(',')
 
   useEffect(() => {

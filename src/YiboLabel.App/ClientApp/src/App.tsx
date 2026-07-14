@@ -23,6 +23,7 @@ import {
   UnlockKeyhole,
 } from 'lucide-react'
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -67,6 +68,13 @@ import {
 import { GroupBindingPanel } from './components/GroupBindingPanel'
 import { LexiconManager } from './components/LexiconManager'
 import {
+  createEditorTab,
+  isTabDirty,
+  normalizeEditorTab,
+  recentClosedTabLimit,
+  serializeTabSnapshot,
+} from './domain/editorTabs'
+import {
   boundsIntersect,
   createRulerTicks,
   findBestSnap,
@@ -104,17 +112,23 @@ import {
   sortElements,
 } from './domain/labelDocument'
 import {
-  createEditorTab as createWorkspaceTab,
+  applyTemplateMetaPatch,
+  formatTemplateSource,
+  getLayerPositionLabel,
+  parseTagInput,
+  toTemplateSummary,
+} from './domain/templateMetadata'
+import {
   getTabDisplayName,
   historyLimit,
-  isTabDirty as computeTabDirty,
-  normalizeEditorTab as restoreWorkspaceTab,
   readWorkspaceSnapshot,
+  workspaceStorageKey,
   type ClosedTabSnapshot,
   type EditorTab,
   type WorkspaceSnapshot,
 } from './domain/workspace'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { sendWindowChromeCommand } from './platform/windowChrome'
 import type {
   AppStateResponse,
   DuplicateTemplateRequest,
@@ -122,22 +136,24 @@ import type {
   LabelDocument,
   LabelElement,
   LabelTemplateRecord,
-  LabelTemplateSummary,
   LexiconEntry,
   LexiconGroup,
   LexiconLibrary,
+  LabelTemplateSummary,
   LexiconGroupSummary,
   UpdateTemplateMetaRequest,
 } from './types'
 
 const baseCanvasScale = 16
+const emptySelectionIds: string[] = []
+const emptyHistoryState: EditorTab['history'] = { past: [], future: [] }
+const emptyTemplateTags: string[] = []
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
 type TemplateSort = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'created-desc' | 'created-asc'
 
 type WorkspaceSurface = 'editor' | 'templates' | 'lexicons'
-type WindowChromeCommand = 'drag' | 'toggle-maximize' | 'minimize' | 'close'
 type LayerAction = 'front' | 'back' | 'forward' | 'backward'
 
 type MoveInteraction = {
@@ -175,88 +191,6 @@ type MarqueeInteraction = {
 }
 
 type EditorInteraction = MoveInteraction | ResizeInteraction | RotateInteraction | MarqueeInteraction
-
-const workspaceStorageKey = 'yibolabel.workspace.v6'
-const recentClosedTabLimit = 8
-
-function createEditorTab(
-  document: LabelDocument,
-  options?: {
-    id?: string
-    templateId?: string | null
-    selectedElementIds?: string[]
-    templateDescription?: string
-    templateTags?: string[]
-    templateSource?: string
-  },
-) {
-  return createWorkspaceTab(document, serializeTabSnapshot, options)
-}
-
-function normalizeEditorTab(tab: WorkspaceSnapshot['tabs'][number]) {
-  return restoreWorkspaceTab(tab, serializeTabSnapshot)
-}
-
-function isTabDirty(tab: Pick<EditorTab, 'document' | 'templateDescription' | 'templateTags' | 'templateSource' | 'lastSavedSnapshot'>) {
-  return computeTabDirty(tab, serializeTabSnapshot)
-}
-
-function toTemplateSummary(record: LabelTemplateRecord): LabelTemplateSummary {
-  return {
-    id: record.id,
-    name: record.name,
-    description: record.description,
-    tags: record.tags,
-    source: record.source,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    lastUsedAt: record.lastUsedAt,
-    widthMm: record.document.widthMm,
-    heightMm: record.document.heightMm,
-    elementCount: record.document.elements.length,
-  }
-}
-
-function serializeTabSnapshot(tab: Pick<EditorTab, 'document' | 'templateDescription' | 'templateTags' | 'templateSource'>) {
-  return JSON.stringify({
-    document: normalizeDocument(tab.document),
-    templateDescription: tab.templateDescription.trim(),
-    templateTags: [...tab.templateTags].map((tag) => tag.trim()).filter(Boolean).sort((left, right) => left.localeCompare(right, 'zh-CN')),
-    templateSource: tab.templateSource,
-  })
-}
-
-function getLayerPositionLabel(element: LabelElement, layerCount: number) {
-  return `第 ${(element.zIndex ?? 0) + 1} 层 / 共 ${layerCount} 层`
-}
-
-function parseTagInput(value: string) {
-  return value
-    .split(/[，,]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
-function formatTemplateSource(source: string) {
-  if (source === 'ddl-import') {
-    return 'DDL 导入'
-  }
-  if (source === 'duplicate') {
-    return '模板复制'
-  }
-  if (source === 'seed') {
-    return '系统示例'
-  }
-  if (source === 'blank') {
-    return '空白草稿'
-  }
-  return '手工创建'
-}
-
-function sendWindowChromeCommand(command: WindowChromeCommand) {
-  const chromeBridge = (window as typeof window & { chrome?: { webview?: { postMessage: (message: unknown) => void } } }).chrome?.webview
-  chromeBridge?.postMessage({ type: 'window-chrome', command })
-}
 
 export default function App() {
   const [appState, setAppState] = useState<AppStateResponse | null>(null)
@@ -298,11 +232,11 @@ export default function App() {
   const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? null, [activeTabId, tabs])
   const hasActiveTab = activeTab !== null
   const labelDocument = activeTab?.document ?? fallbackDocument
-  const selectedElementIds = activeTab?.selectedElementIds ?? []
-  const history = activeTab?.history ?? { past: [], future: [] }
+  const selectedElementIds = activeTab?.selectedElementIds ?? emptySelectionIds
+  const history = activeTab?.history ?? emptyHistoryState
   const activeTemplateId = activeTab?.templateId ?? null
   const templateDescription = activeTab?.templateDescription ?? ''
-  const templateTags = activeTab?.templateTags ?? []
+  const templateTags = activeTab?.templateTags ?? emptyTemplateTags
   const templateSource = activeTab?.templateSource ?? 'blank'
   const documentRef = useRef(labelDocument)
   const historyRef = useRef(history)
@@ -474,15 +408,15 @@ export default function App() {
     return () => window.removeEventListener('wheel', handleWheel, { capture: true })
   }, [])
 
-  function updateActiveTab(mutator: (tab: EditorTab) => EditorTab) {
+  const updateActiveTab = useCallback((mutator: (tab: EditorTab) => EditorTab) => {
     if (!activeTabId) {
       return
     }
 
     setTabs((currentTabs) => currentTabs.map((tab) => (tab.id === activeTabId ? mutator(tab) : tab)))
-  }
+  }, [activeTabId])
 
-  function setActiveDocument(nextDocument: LabelDocument, options?: { pushHistory?: boolean }) {
+  const setActiveDocument = useCallback((nextDocument: LabelDocument, options?: { pushHistory?: boolean }) => {
     updateActiveTab((tab) => {
       const normalized = normalizeDocument(nextDocument)
       if (serializeDocument(tab.document) === serializeDocument(normalized)) {
@@ -504,14 +438,37 @@ export default function App() {
         selectedElementIds: tab.selectedElementIds.filter((id) => normalized.elements.some((element) => element.id === id)),
       }
     })
-  }
+  }, [updateActiveTab])
 
-  function setActiveSelection(nextSelection: string[]) {
+  const setActiveSelection = useCallback((nextSelection: string[]) => {
     updateActiveTab((tab) => ({
       ...tab,
       selectedElementIds: nextSelection.filter((id) => tab.document.elements.some((element) => element.id === id)),
     }))
-  }
+  }, [updateActiveTab])
+
+  const pushHistoryFrom = useCallback((startDocument: LabelDocument) => {
+    const current = documentRef.current
+    if (serializeDocument(startDocument) === serializeDocument(current)) {
+      return
+    }
+
+    updateActiveTab((tab) => ({
+      ...tab,
+      history: {
+        past: [...historyRef.current.past, normalizeDocument(startDocument)].slice(-historyLimit),
+        future: [],
+      },
+    }))
+  }, [updateActiveTab])
+
+  const applyDocument = useCallback((nextDocument: LabelDocument, options?: { pushHistory?: boolean }) => {
+    setActiveDocument(nextDocument, options)
+  }, [setActiveDocument])
+
+  const updateDocument = useCallback((mutator: (current: LabelDocument) => LabelDocument, options?: { pushHistory?: boolean }) => {
+    applyDocument(mutator(documentRef.current), options)
+  }, [applyDocument])
 
   function showEditor(tabId?: string | null) {
     const targetId = tabId ?? lastEditorTabId ?? activeTabId ?? tabsRef.current[0]?.id ?? null
@@ -535,12 +492,7 @@ export default function App() {
   }
 
   function setActiveTemplateMeta(patch: Partial<Pick<EditorTab, 'templateDescription' | 'templateTags' | 'templateSource'>>) {
-    updateActiveTab((tab) => ({
-      ...tab,
-      templateDescription: patch.templateDescription ?? tab.templateDescription,
-      templateTags: patch.templateTags ?? tab.templateTags,
-      templateSource: patch.templateSource ?? tab.templateSource,
-    }))
+    updateActiveTab((tab) => applyTemplateMetaPatch(tab, patch))
   }
 
   function toggleLexiconGroupForSelection(groupId: string) {
@@ -699,7 +651,7 @@ export default function App() {
     if (validSelection.length !== selectedElementIds.length) {
       setActiveSelection(validSelection)
     }
-  }, [labelDocument.elements, selectedElementIds])
+  }, [labelDocument.elements, selectedElementIds, setActiveSelection])
 
   useEffect(() => {
     if (!interaction) {
@@ -919,7 +871,7 @@ export default function App() {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [canvasScale, interaction, visibleElements])
+  }, [canvasScale, interaction, pushHistoryFrom, setActiveDocument, setActiveSelection, visibleElements])
 
   useKeyboardShortcuts({
     activeTabId,
@@ -1173,29 +1125,6 @@ export default function App() {
         }
       }),
     )
-  }
-
-  function pushHistoryFrom(startDocument: LabelDocument) {
-    const current = documentRef.current
-    if (serializeDocument(startDocument) === serializeDocument(current)) {
-      return
-    }
-
-    updateActiveTab((tab) => ({
-      ...tab,
-      history: {
-        past: [...historyRef.current.past, normalizeDocument(startDocument)].slice(-historyLimit),
-        future: [],
-      },
-    }))
-  }
-
-  function applyDocument(nextDocument: LabelDocument, options?: { pushHistory?: boolean }) {
-    setActiveDocument(nextDocument, options)
-  }
-
-  function updateDocument(mutator: (current: LabelDocument) => LabelDocument, options?: { pushHistory?: boolean }) {
-    applyDocument(mutator(documentRef.current), options)
   }
 
   async function loadTemplate(id: string) {
