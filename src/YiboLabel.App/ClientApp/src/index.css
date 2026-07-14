@@ -1,0 +1,16 @@
+html {
+  font-family:
+    'Segoe UI Variable',
+    'PingFang SC',
+    'Microsoft YaHei UI',
+    sans-serif;
+}
+
+body,
+#root {
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+}

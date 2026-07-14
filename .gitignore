@@ -1,0 +1,42 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.agents/
+.codex/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+tmp-*.log
+
+# .NET build output
+**/bin/
+**/obj/
+
+# Frontend dependencies and build output
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/.vite/
+
+# Runtime caches and desktop host state
+**/*.WebView2/
+**/EBWebView/
+
+# Local verification / packaging artifacts
+artifacts/
+
+# Local app runtime data that should not be versioned
+src/data/jobs/
+
+# Keep the seeded local data and docs under version control
+!src/data/templates/
+!src/data/templates/*.json
+!src/data/lexicons.json

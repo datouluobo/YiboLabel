@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "lexicons": [
+    {
+      "id": "common-label-content",
+      "name": "\u5E38\u7528\u6807\u7B7E\u5185\u5BB9",
+      "createdAt": "2026-07-14T01:24:05.6486482+08:00",
+      "updatedAt": "2026-07-14T10:40:59.2688729+08:00",
+      "groups": [
+        {
+          "id": "shipping-codes",
+          "lexiconId": "common-label-content",
+          "name": "\u53D1\u8D27\u7F16\u7801",
+          "createdAt": "2026-07-14T01:24:05.6486482+08:00",
+          "updatedAt": "2026-07-14T01:24:05.6486482+08:00",
+          "entries": [
+            {
+              "id": "yibo-20260705",
+              "text": "YIBO-20260705",
+              "createdAt": "2026-07-14T01:24:05.6486482+08:00",
+              "updatedAt": "2026-07-14T01:24:05.6486482+08:00"
+            },
+            {
+              "id": "pkg-000001",
+              "text": "PKG-000001",
+              "createdAt": "2026-07-14T01:24:05.6486482+08:00",
+              "updatedAt": "2026-07-14T01:24:05.6486482+08:00"
+            },
+            {
+              "id": "ship-ready",
+              "text": "SHIP-READY",
+              "createdAt": "2026-07-14T01:24:05.6486482+08:00",
+              "updatedAt": "2026-07-14T01:24:05.6486482+08:00"
+            }
+          ]
+        },
+        {
+          "id": "\u54C1\u540D-20260714104044992",
+          "lexiconId": "common-label-content",
+          "name": "\u54C1\u540D",
+          "createdAt": "2026-07-14T10:40:44.9916588+08:00",
+          "updatedAt": "2026-07-14T10:40:44.9916588+08:00",
+          "entries": []
+        },
+        {
+          "id": "\u89C4\u683C-20260714104048481",
+          "lexiconId": "common-label-content",
+          "name": "\u89C4\u683C",
+          "createdAt": "2026-07-14T10:40:48.4813769+08:00",
+          "updatedAt": "2026-07-14T10:40:48.4813769+08:00",
+          "entries": []
+        },
+        {
+          "id": "\u6570\u91CF-20260714104052191",
+          "lexiconId": "common-label-content",
+          "name": "\u6570\u91CF",
+          "createdAt": "2026-07-14T10:40:52.1912683+08:00",
+          "updatedAt": "2026-07-14T10:40:52.1912683+08:00",
+          "entries": []
+        }
+      ]
+    }
+  ]
+}
