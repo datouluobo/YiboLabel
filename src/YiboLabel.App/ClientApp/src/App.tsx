@@ -36,7 +36,45 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import './App.css'
+import {
+  boundsIntersect,
+  createRulerTicks,
+  findBestSnap,
+  getElementBounds,
+  getElementsAtPoint,
+  getMarqueeBounds,
+  getSelectionBounds,
+  getSnapTargets,
+  pointFromPointer,
+  reorderElements,
+  snapMoveBounds,
+  type Point,
+  type SnapLine,
+} from './domain/editorGeometry'
 import { importDlabelTemplate } from './domain/dlabelImport'
+import {
+  clamp,
+  createBlankDocument,
+  createContentPatch,
+  createElement,
+  createId,
+  getDefaultElementName,
+  getLayerMeta,
+  getQrTextAreaHeightMm,
+  getQrTextHeightMm,
+  isLexiconEnabledElement,
+  minDocumentSizeMm,
+  minElementSizeMm,
+  normalizeDocument,
+  normalizeElement,
+  normalizeRotation,
+  parseSerializedDocument,
+  pointsToMm,
+  reindexElements,
+  roundTo,
+  serializeDocument,
+  sortElements,
+} from './domain/labelDocument'
 import type {
   AppStateResponse,
   BarcodeElement,
@@ -61,35 +99,6 @@ import type {
 
 const baseCanvasScale = 16
 const historyLimit = 40
-const minDocumentSizeMm = 20
-const minElementSizeMm = 0.8
-const snapDistanceMm = 0.8
-
-type Point = {
-  x: number
-  y: number
-}
-
-type Bounds = {
-  left: number
-  top: number
-  right: number
-  bottom: number
-  width: number
-  height: number
-  centerX: number
-  centerY: number
-}
-
-type RulerTick = {
-  value: number
-  major: boolean
-}
-
-type SnapLine = {
-  orientation: 'vertical' | 'horizontal'
-  value: number
-}
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
@@ -181,47 +190,6 @@ type EditorInteraction = MoveInteraction | ResizeInteraction | RotateInteraction
 const workspaceStorageKey = 'yibolabel.workspace.v6'
 const recentClosedTabLimit = 8
 
-const createId = () => crypto.randomUUID()
-
-const getDefaultElementName = (type: LabelElement['type']) =>
-  type === 'text'
-    ? '文本'
-    : type === 'barcode'
-      ? '条码'
-      : type === 'qrcode'
-        ? '二维码'
-        : type === 'line'
-          ? '线条'
-          : type === 'rectangle'
-            ? '矩形'
-            : '图片'
-
-const createBlankDocument = (name = '未命名标签'): LabelDocument =>
-  normalizeDocument({
-    name,
-    widthMm: 40,
-    heightMm: 30,
-    copies: 1,
-    darkness: 8,
-    gapMm: 2,
-    elements: [
-      {
-        id: createId(),
-        name: '标题',
-        type: 'text',
-        x: 3,
-        y: 3,
-        width: 18,
-        height: 6,
-        rotation: 0,
-        text: 'YiboLabel',
-        fontSize: 24,
-        bold: true,
-        align: 'left',
-      },
-    ],
-  })
-
 function createEditorTab(
   document: LabelDocument,
   options?: {
@@ -306,150 +274,6 @@ function isTabDirty(tab: Pick<EditorTab, 'document' | 'templateDescription' | 't
   return serializeTabSnapshot(tab) !== tab.lastSavedSnapshot
 }
 
-function createElement(type: LabelElement['type'], document: LabelDocument, seed?: Partial<LabelElement>): LabelElement {
-  const base = {
-    id: createId(),
-    name: getDefaultElementName(type),
-    x: clamp(document.widthMm * 0.1, 2, Math.max(2, document.widthMm - 16)),
-    y: clamp(document.heightMm * 0.12, 2, Math.max(2, document.heightMm - 12)),
-    width: 14,
-    height: 6,
-    rotation: 0,
-    locked: false,
-    hidden: false,
-    zIndex: document.elements.length,
-  }
-
-  const next =
-    type === 'text'
-      ? { ...base, type, text: '新文本', fontSize: 22, bold: false, align: 'left' as const }
-      : type === 'barcode'
-        ? { ...base, type, width: 28, height: 10, value: '1234567890', symbology: '128', showHumanReadable: true, textPosition: 'bottom' as const, humanReadableFontSize: 12 }
-        : type === 'qrcode'
-          ? { ...base, type, width: 10, height: 10, value: 'https://yibo.local', showHumanReadable: false, textPosition: 'bottom' as const, humanReadableFontSize: 12 }
-          : type === 'line'
-            ? { ...base, type, width: 20, height: 0.8, thickness: 2 }
-            : type === 'rectangle'
-              ? { ...base, type, width: 18, height: 12, thickness: 1 }
-              : { ...base, type, width: 16, height: 12, dataUrl: '', invert: false }
-
-  return normalizeElement({ ...next, ...seed } as LabelElement, document, document.elements.length)
-}
-
-function normalizeDocument(document: LabelDocument): LabelDocument {
-  const widthMm = clamp(roundTo(document.widthMm || 40, 0.1), minDocumentSizeMm, 200)
-  const heightMm = clamp(roundTo(document.heightMm || 30, 0.1), minDocumentSizeMm, 200)
-  const base: LabelDocument = {
-    ...document,
-    name: document.name || '未命名标签',
-    widthMm,
-    heightMm,
-    copies: clamp(Math.round(document.copies || 1), 1, 99),
-    darkness: clamp(roundTo(document.darkness || 8, 0.1), 1, 15),
-    gapMm: clamp(roundTo(document.gapMm || 2, 0.1), 0, 20),
-    elements: [],
-  }
-
-  base.elements = (document.elements ?? []).map((element, index) => normalizeElement(element, base, index))
-  return { ...base, elements: reindexElements(base.elements) }
-}
-
-function normalizeElement(element: LabelElement, document: LabelDocument, index: number): LabelElement {
-  const widthLimit = Math.max(minElementSizeMm, document.widthMm)
-  const heightLimit = Math.max(minElementSizeMm, document.heightMm)
-  const width = clamp(roundTo(element.width || minElementSizeMm, 0.1), minElementSizeMm, widthLimit)
-  const unclampedHeight = clamp(roundTo(element.height || minElementSizeMm, 0.1), minElementSizeMm, heightLimit)
-  const x = clamp(roundTo(element.x || 0, 0.1), 0, Math.max(0, document.widthMm - width))
-  const defaultHeight = element.type === 'line' ? 0.8 : unclampedHeight
-  const height = clamp(roundTo(defaultHeight, 0.1), minElementSizeMm, heightLimit)
-  const y = clamp(roundTo(element.y || 0, 0.1), 0, Math.max(0, document.heightMm - height))
-  const common = {
-    ...element,
-    name: element.name?.trim() || getDefaultElementName(element.type),
-    x,
-    y,
-    width,
-    height,
-    rotation: normalizeRotation(element.rotation),
-    locked: Boolean(element.locked),
-    hidden: Boolean(element.hidden),
-    zIndex: element.zIndex ?? index,
-    lexiconGroupIds: [...new Set(element.lexiconGroupIds ?? [])],
-    defaultLexiconGroupId: element.defaultLexiconGroupId ?? null,
-  }
-
-  if (element.type === 'text') {
-    return {
-      ...common,
-      text: element.text ?? '',
-      fontSize: clamp(Math.round(element.fontSize || 22), 8, 96),
-      bold: Boolean(element.bold),
-      align: element.align === 'center' || element.align === 'right' ? element.align : 'left',
-    } as TextElement
-  }
-
-  if (element.type === 'barcode') {
-    return {
-      ...common,
-      value: element.value ?? '',
-      symbology: element.symbology?.trim() || '128',
-      showHumanReadable: Boolean(element.showHumanReadable),
-      textPosition: element.textPosition === 'top' ? 'top' : 'bottom',
-      humanReadableFontSize: clamp(Math.round(element.humanReadableFontSize || 12), 8, 36),
-    } as BarcodeElement
-  }
-
-  if (element.type === 'qrcode') {
-    const humanReadableFontSize = clamp(Math.round(element.humanReadableFontSize || 12), 8, 36)
-    const showHumanReadable = Boolean(element.showHumanReadable)
-    const textHeight = showHumanReadable ? getQrTextHeightMm(humanReadableFontSize) : 0
-    const maxCoreSize = Math.max(minElementSizeMm, Math.min(document.widthMm, document.heightMm - textHeight))
-    const coreSize = clamp(roundTo(common.width, 0.1), minElementSizeMm, maxCoreSize)
-    const elementHeight = showHumanReadable
-      ? clamp(roundTo(Math.max(common.height, coreSize + textHeight), 0.1), coreSize + textHeight, document.heightMm)
-      : coreSize
-    return {
-      ...common,
-      width: coreSize,
-      height: elementHeight,
-      x: clamp(common.x, 0, Math.max(0, document.widthMm - coreSize)),
-      y: clamp(common.y, 0, Math.max(0, document.heightMm - elementHeight)),
-      value: element.value ?? '',
-      showHumanReadable,
-      textPosition: element.textPosition === 'top' ? 'top' : 'bottom',
-      humanReadableFontSize,
-    } as QrCodeElement
-  }
-
-  if (element.type === 'line') {
-    const thickness = clamp(Math.round(element.thickness || 1), 1, 8)
-    return {
-      ...common,
-      height: clamp(common.height, minElementSizeMm, document.heightMm),
-      thickness,
-    } as LineElement
-  }
-
-  if (element.type === 'rectangle') {
-    return {
-      ...common,
-      thickness: clamp(Math.round(element.thickness || 1), 1, 8),
-    } as RectangleElement
-  }
-
-  return {
-    ...common,
-    dataUrl: element.dataUrl ?? '',
-    invert: Boolean(element.invert),
-  } as ImageElement
-}
-
-function reindexElements(elements: LabelElement[]) {
-  return [...elements]
-    .sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0) || left.id.localeCompare(right.id))
-    .map((element, index) => ({ ...element, zIndex: index }))
-}
-
 function toTemplateSummary(record: LabelTemplateRecord): LabelTemplateSummary {
   return {
     id: record.id,
@@ -466,14 +290,6 @@ function toTemplateSummary(record: LabelTemplateRecord): LabelTemplateSummary {
   }
 }
 
-function sortElements(elements: LabelElement[]) {
-  return [...elements].sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0) || left.id.localeCompare(right.id))
-}
-
-function serializeDocument(document: LabelDocument) {
-  return JSON.stringify(normalizeDocument(document))
-}
-
 function serializeTabSnapshot(tab: Pick<EditorTab, 'document' | 'templateDescription' | 'templateTags' | 'templateSource'>) {
   return JSON.stringify({
     document: normalizeDocument(tab.document),
@@ -483,117 +299,12 @@ function serializeTabSnapshot(tab: Pick<EditorTab, 'document' | 'templateDescrip
   })
 }
 
-function parseSerializedDocument(serialized: string) {
-  try {
-    const parsed = JSON.parse(serialized) as LabelDocument | { document?: LabelDocument }
-    if ('document' in parsed && parsed.document) {
-      return normalizeDocument(parsed.document)
-    }
-
-    return normalizeDocument(parsed as LabelDocument)
-  } catch {
-    return null
-  }
-}
-
-function normalizeRotation(rotation: number) {
-  const normalized = ((rotation % 360) + 360) % 360
-  return roundTo(normalized, 1)
-}
-
-function roundTo(value: number, step: number) {
-  return Math.round(value / step) * step
-}
-
-function pointsToMm(points: number) {
-  return points * 0.352778
-}
-
-function getQrTextHeightMm(fontSize: number) {
-  return roundTo(pointsToMm(fontSize) * 1.28, 0.1)
-}
-
-function getQrTextAreaHeightMm(element: Pick<QrCodeElement, 'showHumanReadable' | 'humanReadableFontSize'>) {
-  return element.showHumanReadable ? getQrTextHeightMm(element.humanReadableFontSize) : 0
-}
-
-function clamp(value: number, min: number, max: number) {
-  if (max < min) {
-    return min
-  }
-
-  return Math.min(Math.max(value, min), max)
-}
-
-function getElementBounds(element: LabelElement): Bounds {
-  const left = element.x
-  const top = element.y
-  const right = element.x + element.width
-  const bottom = element.y + element.height
-  return {
-    left,
-    top,
-    right,
-    bottom,
-    width: element.width,
-    height: element.height,
-    centerX: left + element.width / 2,
-    centerY: top + element.height / 2,
-  }
-}
-
-function getSelectionBounds(elements: LabelElement[]): Bounds | null {
-  if (elements.length === 0) {
-    return null
-  }
-
-  const left = Math.min(...elements.map((element) => element.x))
-  const top = Math.min(...elements.map((element) => element.y))
-  const right = Math.max(...elements.map((element) => element.x + element.width))
-  const bottom = Math.max(...elements.map((element) => element.y + element.height))
-  return {
-    left,
-    top,
-    right,
-    bottom,
-    width: right - left,
-    height: bottom - top,
-    centerX: (left + right) / 2,
-    centerY: (top + bottom) / 2,
-  }
-}
-
-function boundsIntersect(left: Bounds, right: Bounds) {
-  return left.left <= right.right && left.right >= right.left && left.top <= right.bottom && left.bottom >= right.top
-}
-
-function pointFromPointer(bounds: DOMRect, event: PointerEvent | ReactPointerEvent, scale: number): Point {
-  return {
-    x: clamp((event.clientX - bounds.left) / scale, 0, bounds.width / scale),
-    y: clamp((event.clientY - bounds.top) / scale, 0, bounds.height / scale),
-  }
-}
-
 function isTextInputTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
     return false
   }
 
   return target.closest('input, textarea, select, [contenteditable="true"]') !== null
-}
-
-function getLayerMeta(element: LabelElement) {
-  const value =
-    element.type === 'text'
-      ? element.text
-      : element.type === 'barcode' || element.type === 'qrcode'
-        ? element.value
-        : element.type === 'line'
-          ? '线条'
-          : element.type === 'rectangle'
-            ? '矩形'
-            : '图片'
-  return `${getDefaultElementName(element.type)} · ${value || '空'}`
 }
 
 function getLayerPositionLabel(element: LabelElement, layerCount: number) {
@@ -621,161 +332,6 @@ function formatTemplateSource(source: string) {
     return '空白草稿'
   }
   return '手工创建'
-}
-
-function isLexiconEnabledElement(element: LabelElement | null): element is TextElement | BarcodeElement | QrCodeElement {
-  return element?.type === 'text' || element?.type === 'barcode' || element?.type === 'qrcode'
-}
-
-function createContentPatch(element: TextElement | BarcodeElement | QrCodeElement, value: string): Partial<LabelElement> {
-  return element.type === 'text' ? ({ text: value } as Partial<TextElement>) : ({ value } as Partial<BarcodeElement | QrCodeElement>)
-}
-
-function getMarqueeBounds(start: Point, current: Point): Bounds {
-  const left = Math.min(start.x, current.x)
-  const top = Math.min(start.y, current.y)
-  const right = Math.max(start.x, current.x)
-  const bottom = Math.max(start.y, current.y)
-  return {
-    left,
-    top,
-    right,
-    bottom,
-    width: right - left,
-    height: bottom - top,
-    centerX: (left + right) / 2,
-    centerY: (top + bottom) / 2,
-  }
-}
-
-function createRulerTicks(lengthMm: number): RulerTick[] {
-  const ticks: RulerTick[] = []
-  for (let value = 0; value <= lengthMm + 0.01; value += 5) {
-    const rounded = roundTo(value, 0.1)
-    ticks.push({ value: rounded, major: Math.round(rounded) % 10 === 0 })
-  }
-  return ticks
-}
-
-function getElementsAtPoint(document: LabelDocument, point: Point) {
-  return sortElements(document.elements)
-    .filter((element) => !element.hidden)
-    .filter((element) => {
-      const bounds = getElementBounds(element)
-      return point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom
-    })
-}
-
-function getSnapTargets(document: LabelDocument, excludedIds: string[]) {
-  const excluded = new Set(excludedIds)
-  const vertical = [0, document.widthMm / 2, document.widthMm]
-  const horizontal = [0, document.heightMm / 2, document.heightMm]
-
-  for (const element of document.elements) {
-    if (excluded.has(element.id) || element.hidden) {
-      continue
-    }
-
-    const bounds = getElementBounds(element)
-    vertical.push(bounds.left, bounds.centerX, bounds.right)
-    horizontal.push(bounds.top, bounds.centerY, bounds.bottom)
-  }
-
-  return { vertical, horizontal }
-}
-
-function findBestSnap(value: number, targets: number[]) {
-  let bestDelta = 0
-  let bestDistance = snapDistanceMm + 1
-  let bestTarget: number | null = null
-
-  for (const target of targets) {
-    const delta = target - value
-    const distance = Math.abs(delta)
-    if (distance <= snapDistanceMm && distance < bestDistance) {
-      bestDistance = distance
-      bestDelta = delta
-      bestTarget = target
-    }
-  }
-
-  return { delta: bestDelta, target: bestTarget }
-}
-
-function snapMoveBounds(bounds: Bounds, document: LabelDocument, selectedIds: string[]) {
-  const targets = getSnapTargets(document, selectedIds)
-  const xCandidates = [
-    { value: bounds.left, orientation: 'vertical' as const },
-    { value: bounds.centerX, orientation: 'vertical' as const },
-    { value: bounds.right, orientation: 'vertical' as const },
-  ]
-  const yCandidates = [
-    { value: bounds.top, orientation: 'horizontal' as const },
-    { value: bounds.centerY, orientation: 'horizontal' as const },
-    { value: bounds.bottom, orientation: 'horizontal' as const },
-  ]
-
-  let deltaX = 0
-  let deltaY = 0
-  let verticalLine: number | null = null
-  let horizontalLine: number | null = null
-
-  for (const candidate of xCandidates) {
-    const snap = findBestSnap(candidate.value + deltaX, targets.vertical)
-    if (snap.target !== null && (verticalLine === null || Math.abs(snap.delta) < Math.abs(deltaX))) {
-      deltaX = snap.delta
-      verticalLine = snap.target
-    }
-  }
-
-  for (const candidate of yCandidates) {
-    const snap = findBestSnap(candidate.value + deltaY, targets.horizontal)
-    if (snap.target !== null && (horizontalLine === null || Math.abs(snap.delta) < Math.abs(deltaY))) {
-      deltaY = snap.delta
-      horizontalLine = snap.target
-    }
-  }
-
-  return {
-    deltaX,
-    deltaY,
-    lines: [
-      ...(verticalLine === null ? [] : [{ orientation: 'vertical' as const, value: verticalLine }]),
-      ...(horizontalLine === null ? [] : [{ orientation: 'horizontal' as const, value: horizontalLine }]),
-    ],
-  }
-}
-
-function reorderElements(elements: LabelElement[], selectedIds: string[], action: LayerAction) {
-  const selected = new Set(selectedIds)
-  const ordered = sortElements(elements)
-  const selectedItems = ordered.filter((element) => selected.has(element.id))
-  const unselectedItems = ordered.filter((element) => !selected.has(element.id))
-
-  if (action === 'front') {
-    return reindexElements([...unselectedItems, ...selectedItems])
-  }
-
-  if (action === 'back') {
-    return reindexElements([...selectedItems, ...unselectedItems])
-  }
-
-  const result = [...ordered]
-  if (action === 'forward') {
-    for (let index = result.length - 2; index >= 0; index -= 1) {
-      if (selected.has(result[index].id) && !selected.has(result[index + 1].id)) {
-        ;[result[index], result[index + 1]] = [result[index + 1], result[index]]
-      }
-    }
-    return reindexElements(result)
-  }
-
-  for (let index = 1; index < result.length; index += 1) {
-    if (selected.has(result[index].id) && !selected.has(result[index - 1].id)) {
-      ;[result[index], result[index - 1]] = [result[index - 1], result[index]]
-    }
-  }
-  return reindexElements(result)
 }
 
 function sendWindowChromeCommand(command: WindowChromeCommand) {
