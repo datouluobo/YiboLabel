@@ -96,7 +96,7 @@ export function EditorCanvasPanel({
             </div>
             <div className="canvas-metrics">
               <div>
-                <span>对象数</span>
+                <span>元素数</span>
                 <strong>{labelDocument.elements.length}</strong>
               </div>
               <div>
@@ -108,7 +108,7 @@ export function EditorCanvasPanel({
                 <strong>{visibleElementsCount}</strong>
               </div>
             </div>
-            <p className="canvas-toolbar-tip">Ctrl 多选，Alt 选下层，方向键微调</p>
+            <p className="canvas-toolbar-tip">Ctrl 多选，Alt 选下层元素，方向键微调</p>
           </div>
 
           <div ref={canvasWrapRef} className="canvas-wrap" onPointerDown={onCanvasWrapPointerDown} onWheel={onCanvasWheel}>

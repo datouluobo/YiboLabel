@@ -56,6 +56,7 @@ import {
   findBestSnap,
   getElementBounds,
   getElementsAtPoint,
+  getVisibleElementOverlapSummary,
   getMarqueeBounds,
   getSelectionBounds,
   getSnapTargets,
@@ -74,6 +75,8 @@ import {
   createId,
   getDefaultElementName,
   getQrTextAreaHeightMm,
+  moveElementAfter,
+  moveElementBefore,
   isLexiconEnabledElement,
   minDocumentSizeMm,
   minElementSizeMm,
@@ -85,6 +88,7 @@ import {
   roundTo,
   serializeDocument,
   sortElements,
+  sortElementsByListOrder,
 } from './domain/labelDocument'
 import {
   applyTemplateMetaPatch,
@@ -266,6 +270,7 @@ export default function App() {
 
   const sortedElements = useMemo(() => (hasActiveTab ? sortElements(labelDocument.elements) : []), [hasActiveTab, labelDocument.elements])
   const visibleElements = useMemo(() => sortedElements.filter((element) => !element.hidden), [sortedElements])
+  const visibleOverlapSummary = useMemo(() => getVisibleElementOverlapSummary(visibleElements), [visibleElements])
   const selectedElements = useMemo(
     () => sortElements(labelDocument.elements.filter((element) => selectedElementIds.includes(element.id))),
     [labelDocument.elements, selectedElementIds],
@@ -348,6 +353,7 @@ export default function App() {
   const selectionBounds = useMemo(() => getSelectionBounds(selectedVisibleElements), [selectedVisibleElements])
   const marqueeBounds = interaction?.mode === 'marquee' ? getMarqueeBounds(interaction.start, interaction.current) : null
   const resolvedVisibleElements = visibleElements
+  const listOrderedElements = useMemo(() => sortElementsByListOrder(labelDocument.elements), [labelDocument.elements])
   const horizontalRulerTicks = useMemo(() => createRulerTicks(labelDocument.widthMm), [labelDocument.widthMm])
   const verticalRulerTicks = useMemo(() => createRulerTicks(labelDocument.heightMm), [labelDocument.heightMm])
   const boundLexiconGroups = useMemo(() => {
@@ -1413,10 +1419,16 @@ export default function App() {
       elements: reindexElements([...current.elements, element]),
     }))
     setActiveSelection([element.id])
+    setStatus(`已新增元素：${element.name ?? getDefaultElementName(element.type)}`)
   }
 
   function updateSelectedElement(patch: Partial<LabelElement>) {
     if (!selectedElement) {
+      return
+    }
+
+    if (selectedElement.locked && ('x' in patch || 'y' in patch || 'width' in patch || 'height' in patch || 'rotation' in patch)) {
+      setStatus(`元素已锁定，不能调整位置、尺寸或旋转：${selectedElement.name ?? getDefaultElementName(selectedElement.type)}`)
       return
     }
 
@@ -1453,12 +1465,18 @@ export default function App() {
       return
     }
 
-    const removedCount = selectedElementIds.length
+    const removableIds = selectedElementIds.filter((id) => !labelDocument.elements.find((element) => element.id === id)?.locked)
+    if (removableIds.length === 0) {
+      setStatus('所选元素都已锁定，不能删除。')
+      return
+    }
+
+    const removedCount = removableIds.length
     updateDocument((current) => ({
       ...current,
-      elements: reindexElements(current.elements.filter((element) => !selectedElementIds.includes(element.id))),
+      elements: reindexElements(current.elements.filter((element) => !removableIds.includes(element.id))),
     }))
-    setActiveSelection([])
+    setActiveSelection(selectedElementIds.filter((id) => !removableIds.includes(id)))
     queueActivity(`已删除 ${removedCount} 个元素`)
   }
 
@@ -1501,10 +1519,15 @@ export default function App() {
       return
     }
 
+    const movableIds = new Set(selectedElementIds.filter((id) => !labelDocument.elements.find((element) => element.id === id)?.locked))
+    if (movableIds.size === 0) {
+      return
+    }
+
     updateDocument((current) => ({
       ...current,
       elements: current.elements.map((element) =>
-        selectedElementIds.includes(element.id)
+        movableIds.has(element.id)
           ? normalizeElement(
               {
                 ...element,
@@ -1535,6 +1558,22 @@ export default function App() {
       backward: '下移一层',
     }
     setStatus(`已${actionLabel[action]}：${selectedElementIds.length} 个元素`)
+  }
+
+  function moveElementInList(movingElementId: string, anchorElementId: string, placement: 'before' | 'after') {
+    const movingElement = labelDocument.elements.find((element) => element.id === movingElementId)
+    if (!movingElement || movingElementId === anchorElementId) {
+      return
+    }
+
+    updateDocument((current) => ({
+      ...current,
+      elements: placement === 'before'
+        ? moveElementBefore(current.elements, movingElementId, anchorElementId)
+        : moveElementAfter(current.elements, movingElementId, anchorElementId),
+    }))
+    setActiveSelection([movingElementId])
+    setStatus(`已调整元素顺序：${movingElement.name ?? getDefaultElementName(movingElement.type)}`)
   }
 
   function toggleLock(id: string) {
@@ -1792,7 +1831,7 @@ export default function App() {
               elementCount={labelDocument.elements.length}
               layersCollapsed={layersCollapsed}
               selectedElementIds={selectedElementIds}
-              sortedElements={sortedElements}
+              sortedElements={listOrderedElements}
               onAddText={() => addNewElement('text')}
               onAddBarcode={() => addNewElement('barcode')}
               onAddQrCode={() => addNewElement('qrcode')}
@@ -1818,6 +1857,7 @@ export default function App() {
               }}
               onToggleHidden={toggleHidden}
               onToggleLock={toggleLock}
+              onMoveElement={moveElementInList}
             />
 
             <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageUpload} />
@@ -1858,7 +1898,7 @@ export default function App() {
 
             <aside className="inspector object-panel">
               {!hasActiveTab ? (
-                <p className="empty-note">打开一个标签后，这里会显示对象属性和精确调整项。</p>
+                <p className="empty-note">打开一个标签后，这里会显示元素属性和精确调整项。</p>
               ) : selectedElementIds.length === 0 ? (
                 <p className="empty-note">可单选、框选、按住 Ctrl 多选，再拖拽、缩放、旋转或用键盘微调。</p>
               ) : selectedElement ? (
@@ -1923,6 +1963,7 @@ export default function App() {
         activeTemplateId={activeTemplateId}
         appState={appState}
         currentPrinter={currentPrinter}
+        overlapSummary={visibleOverlapSummary}
         refreshingPrinters={refreshingPrinters}
         saving={saving}
         printing={printing}

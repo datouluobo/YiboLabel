@@ -76,10 +76,10 @@ export function GroupBindingPanel({
           <strong>分组绑定</strong>
           <span>
             {selectedCount === 0
-              ? '未选择可绑定对象'
+              ? '未选择可绑定元素'
               : selectedCount === 1
                 ? `${singleElement?.name ?? getDefaultElementName(singleElement?.type ?? 'text')}`
-                : `批量绑定 ${selectedCount} 个对象`}
+                : `批量绑定 ${selectedCount} 个元素`}
           </span>
         </div>
         <button className="inline-icon-button" type="button" onClick={onClose} aria-label="关闭分组绑定">
@@ -113,12 +113,12 @@ export function GroupBindingPanel({
           </select>
         </label>
       ) : (
-        <p className="empty-note">多选时可批量勾选分组；默认分组请单选对象后设置。</p>
+        <p className="empty-note">多选时可批量勾选分组；默认分组请单选元素后设置。</p>
       )}
 
       <div className="group-binding-list">
         {selectedCount === 0 ? (
-          <p className="empty-note">请选择文本、条码或二维码对象。</p>
+          <p className="empty-note">请选择文本、条码或二维码元素。</p>
         ) : filteredGroups.length === 0 ? (
           <p className="empty-note">没有匹配的分组。</p>
         ) : (

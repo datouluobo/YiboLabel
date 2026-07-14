@@ -1,5 +1,5 @@
 import type { EditorTab } from './workspace'
-import type { LabelElement, LabelTemplateRecord, LabelTemplateSummary } from '../types'
+import type { LabelTemplateRecord, LabelTemplateSummary } from '../types'
 
 export function toTemplateSummary(record: LabelTemplateRecord): LabelTemplateSummary {
   return {
@@ -15,10 +15,6 @@ export function toTemplateSummary(record: LabelTemplateRecord): LabelTemplateSum
     heightMm: record.document.heightMm,
     elementCount: record.document.elements.length,
   }
-}
-
-export function getLayerPositionLabel(element: LabelElement, layerCount: number) {
-  return `第 ${(element.zIndex ?? 0) + 1} 层 / 共 ${layerCount} 层`
 }
 
 export function parseTagInput(value: string) {

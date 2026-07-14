@@ -65,14 +65,14 @@ export function importDlabelTemplate(source: string, fileName: string, dependenc
     })
 
   if (unsupportedCount > 0) {
-    warnings.push(`跳过 ${unsupportedCount} 个暂不支持的对象`)
+    warnings.push(`跳过 ${unsupportedCount} 个暂不支持的元素`)
   }
 
   const importedElements =
     elements.length > 0 ? elements : [dependencies.createElement('text', dependencies.createBlankDocument(baseName), { text: '空白导入模板' })]
 
   if (elements.length === 0) {
-    warnings.push('未识别到可导入对象，已创建空白标签')
+    warnings.push('未识别到可导入元素，已创建空白标签')
   }
 
   return {

@@ -1,6 +1,7 @@
 import { Printer, RefreshCw, Save } from 'lucide-react'
 import clsx from 'clsx'
 import { formatTemplateSource, parseTagInput } from '../domain/templateMetadata'
+import type { ElementOverlapSummary } from '../domain/editorGeometry'
 import type { EditorTab } from '../domain/workspace'
 import type { AppStateResponse, LabelDocument } from '../types'
 
@@ -13,6 +14,7 @@ type DocumentPrintDialogProps = {
   activeTemplateId: string | null
   appState: AppStateResponse | null
   currentPrinter: AppStateResponse['printers'][number] | null
+  overlapSummary: ElementOverlapSummary
   refreshingPrinters: boolean
   saving: boolean
   printing: boolean
@@ -34,6 +36,7 @@ export function DocumentPrintDialog({
   activeTemplateId,
   appState,
   currentPrinter,
+  overlapSummary,
   refreshingPrinters,
   saving,
   printing,
@@ -131,6 +134,13 @@ export function DocumentPrintDialog({
               <button className="inline-icon-button" type="button" onClick={onRefreshPrinters} disabled={refreshingPrinters} title="刷新打印机状态" aria-label="刷新打印机状态">
                 <RefreshCw size={14} className={refreshingPrinters ? 'is-spinning' : undefined} />
               </button>
+            </div>
+          ) : null}
+          {overlapSummary.overlapCount > 0 ? (
+            <div className="print-warning">
+              <strong>发现 {overlapSummary.overlapCount} 组元素重叠</strong>
+              <span>打印机可能会把重叠区域重复打印，导致变粗、变黑或影响扫码。请先测试确认效果。</span>
+              {overlapSummary.barcodeOrQrOverlapCount > 0 ? <span>其中有 {overlapSummary.barcodeOrQrOverlapCount} 组涉及条码或二维码，可能影响扫码识别。</span> : null}
             </div>
           ) : null}
         </div>

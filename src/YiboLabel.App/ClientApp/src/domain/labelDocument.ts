@@ -98,7 +98,7 @@ export function normalizeDocument(document: LabelDocument): LabelDocument {
   }
 
   base.elements = (document.elements ?? []).map((element, index) => normalizeElement(element, base, index))
-  return { ...base, elements: reindexElements(base.elements) }
+  return { ...base, elements: normalizeLayerOrder(base.elements) }
 }
 
 export function normalizeElement(element: LabelElement, document: LabelDocument, index: number): LabelElement {
@@ -190,14 +190,76 @@ export function normalizeElement(element: LabelElement, document: LabelDocument,
   } as ImageElement
 }
 
-export function reindexElements(elements: LabelElement[]) {
+export function normalizeLayerOrder(elements: LabelElement[]) {
   return [...elements]
     .sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0) || left.id.localeCompare(right.id))
     .map((element, index) => ({ ...element, zIndex: index }))
 }
 
-export function sortElements(elements: LabelElement[]) {
+export function assignLayerOrder(elements: LabelElement[]) {
+  return elements.map((element, index) => ({ ...element, zIndex: index }))
+}
+
+export function reindexElements(elements: LabelElement[]) {
+  return normalizeLayerOrder(elements)
+}
+
+export function sortElementsByLayer(elements: LabelElement[]) {
   return [...elements].sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0) || left.id.localeCompare(right.id))
+}
+
+export function sortElements(elements: LabelElement[]) {
+  return sortElementsByLayer(elements)
+}
+
+export function sortElementsByListOrder(elements: LabelElement[]) {
+  return [...sortElementsByLayer(elements)].reverse()
+}
+
+function assignZIndexFromListOrder(elements: LabelElement[]) {
+  return assignLayerOrder([...elements].reverse())
+}
+
+export function moveElementBefore(elements: LabelElement[], movingId: string, anchorId: string) {
+  if (movingId === anchorId) {
+    return normalizeLayerOrder(elements)
+  }
+
+  const ordered = sortElementsByListOrder(elements)
+  const moving = ordered.find((element) => element.id === movingId)
+  if (!moving) {
+    return normalizeLayerOrder(elements)
+  }
+
+  const withoutMoving = ordered.filter((element) => element.id !== movingId)
+  const anchorIndex = withoutMoving.findIndex((element) => element.id === anchorId)
+  if (anchorIndex < 0) {
+    return normalizeLayerOrder(elements)
+  }
+
+  withoutMoving.splice(anchorIndex, 0, moving)
+  return assignZIndexFromListOrder(withoutMoving)
+}
+
+export function moveElementAfter(elements: LabelElement[], movingId: string, anchorId: string) {
+  if (movingId === anchorId) {
+    return normalizeLayerOrder(elements)
+  }
+
+  const ordered = sortElementsByListOrder(elements)
+  const moving = ordered.find((element) => element.id === movingId)
+  if (!moving) {
+    return normalizeLayerOrder(elements)
+  }
+
+  const withoutMoving = ordered.filter((element) => element.id !== movingId)
+  const anchorIndex = withoutMoving.findIndex((element) => element.id === anchorId)
+  if (anchorIndex < 0) {
+    return normalizeLayerOrder(elements)
+  }
+
+  withoutMoving.splice(anchorIndex + 1, 0, moving)
+  return assignZIndexFromListOrder(withoutMoving)
 }
 
 export function serializeDocument(document: LabelDocument) {
@@ -258,6 +320,21 @@ export function getLayerMeta(element: LabelElement) {
             ? '矩形'
             : '图片'
   return `${getDefaultElementName(element.type)} · ${value || '空'}`
+}
+
+export function getElementOrderLabel(element: LabelElement, elementCount: number) {
+  if (elementCount <= 1) {
+    return '唯一元素'
+  }
+
+  const zIndex = element.zIndex ?? 0
+  if (zIndex >= elementCount - 1) {
+    return '最上方'
+  }
+  if (zIndex <= 0) {
+    return '最下方'
+  }
+  return '中间'
 }
 
 export function isLexiconEnabledElement(element: LabelElement | null): element is TextElement | BarcodeElement | QrCodeElement {

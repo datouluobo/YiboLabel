@@ -39,7 +39,7 @@ export function LexiconManager({
       <div className="panel-heading template-browser-head">
         <div>
           <span>词库</span>
-          <p className="panel-note">管理可绑定到文本、条码和二维码对象的分组与条目。</p>
+          <p className="panel-note">管理可绑定到文本、条码和二维码元素的分组与条目。</p>
         </div>
         <div className="canvas-metrics lexicon-metrics">
           <div>

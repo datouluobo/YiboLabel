@@ -1,5 +1,5 @@
 import type { LabelDocument, LabelElement } from '../types'
-import { clamp, roundTo, reindexElements, sortElements } from './labelDocument'
+import { assignLayerOrder, clamp, roundTo, sortElements } from './labelDocument'
 
 export const snapDistanceMm = 0.8
 
@@ -196,11 +196,11 @@ export function reorderElements(
   const unselectedItems = ordered.filter((element) => !selected.has(element.id))
 
   if (action === 'front') {
-    return reindexElements([...unselectedItems, ...selectedItems])
+    return assignLayerOrder([...unselectedItems, ...selectedItems])
   }
 
   if (action === 'back') {
-    return reindexElements([...selectedItems, ...unselectedItems])
+    return assignLayerOrder([...selectedItems, ...unselectedItems])
   }
 
   const result = [...ordered]
@@ -210,7 +210,7 @@ export function reorderElements(
         ;[result[index], result[index + 1]] = [result[index + 1], result[index]]
       }
     }
-    return reindexElements(result)
+    return assignLayerOrder(result)
   }
 
   for (let index = 1; index < result.length; index += 1) {
@@ -219,5 +219,33 @@ export function reorderElements(
     }
   }
 
-  return reindexElements(result)
+  return assignLayerOrder(result)
+}
+
+export type ElementOverlapSummary = {
+  overlapCount: number
+  barcodeOrQrOverlapCount: number
+}
+
+export function getVisibleElementOverlapSummary(elements: LabelElement[]): ElementOverlapSummary {
+  let overlapCount = 0
+  let barcodeOrQrOverlapCount = 0
+
+  for (let leftIndex = 0; leftIndex < elements.length - 1; leftIndex += 1) {
+    const left = elements[leftIndex]
+    const leftBounds = getElementBounds(left)
+    for (let rightIndex = leftIndex + 1; rightIndex < elements.length; rightIndex += 1) {
+      const right = elements[rightIndex]
+      if (!boundsIntersect(leftBounds, getElementBounds(right))) {
+        continue
+      }
+
+      overlapCount += 1
+      if (left.type === 'barcode' || left.type === 'qrcode' || right.type === 'barcode' || right.type === 'qrcode') {
+        barcodeOrQrOverlapCount += 1
+      }
+    }
+  }
+
+  return { overlapCount, barcodeOrQrOverlapCount }
 }

@@ -74,7 +74,7 @@ export function ContentPicker({
       </div>
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="筛选候选" />
       {groups.length === 0 ? (
-        <p className="empty-note">当前对象未绑定分组。</p>
+        <p className="empty-note">当前元素未绑定分组。</p>
       ) : suggestions.length === 0 ? (
         <p className="empty-note">没有匹配的内容。</p>
       ) : (

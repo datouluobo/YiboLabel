@@ -277,6 +277,7 @@ export function ElementInspector({
   onToggleLock: () => void
   onToggleHidden: () => void
 }) {
+  const geometryLocked = element.locked
   const nudge = (x: number, y: number) => onPatch({ x: roundTo(element.x + x, 0.1), y: roundTo(element.y + y, 0.1) })
   const patchSize = (patch: Partial<LabelElement>) => {
     if (element.type !== 'qrcode') {
@@ -335,38 +336,38 @@ export function ElementInspector({
         </div>
       </InspectorSection>
 
-      <InspectorSection title="位置 / 尺寸" hint="mm">
+      <InspectorSection title="位置 / 尺寸" hint={geometryLocked ? '已锁定' : 'mm'}>
         <div className="field-row">
           <label>
             X
-            <input type="number" step="0.5" value={element.x} onChange={(event) => onPatch({ x: Number(event.target.value) })} />
+            <input type="number" step="0.5" value={element.x} disabled={geometryLocked} onChange={(event) => onPatch({ x: Number(event.target.value) })} />
           </label>
           <label>
             Y
-            <input type="number" step="0.5" value={element.y} onChange={(event) => onPatch({ y: Number(event.target.value) })} />
+            <input type="number" step="0.5" value={element.y} disabled={geometryLocked} onChange={(event) => onPatch({ y: Number(event.target.value) })} />
           </label>
         </div>
         <div className="field-row">
           <label>
             宽
-            <input type="number" step="0.5" value={element.width} onChange={(event) => patchSize({ width: Number(event.target.value) })} />
+            <input type="number" step="0.5" value={element.width} disabled={geometryLocked} onChange={(event) => patchSize({ width: Number(event.target.value) })} />
           </label>
           <label>
             高
-            <input type="number" step="0.5" value={element.height} onChange={(event) => patchSize({ height: Number(event.target.value) })} />
+            <input type="number" step="0.5" value={element.height} disabled={geometryLocked} onChange={(event) => patchSize({ height: Number(event.target.value) })} />
           </label>
         </div>
         <div className="nudge-grid">
-          <button className="mini-button" onClick={() => nudge(0, -0.5)}>
+          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0, -0.5)}>
             ↑ 0.5
           </button>
-          <button className="mini-button" onClick={() => nudge(-0.5, 0)}>
+          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(-0.5, 0)}>
             ← 0.5
           </button>
-          <button className="mini-button" onClick={() => nudge(0.5, 0)}>
+          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0.5, 0)}>
             → 0.5
           </button>
-          <button className="mini-button" onClick={() => nudge(0, 0.5)}>
+          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0, 0.5)}>
             ↓ 0.5
           </button>
         </div>
@@ -375,7 +376,7 @@ export function ElementInspector({
       <InspectorSection>
         <label>
           旋转
-          <input type="number" step="1" min="0" max="359" value={element.rotation} onChange={(event) => onPatch({ rotation: Number(event.target.value) })} />
+          <input type="number" step="1" min="0" max="359" value={element.rotation} disabled={geometryLocked} onChange={(event) => onPatch({ rotation: Number(event.target.value) })} />
         </label>
         <div className="segmented-row">
           {rotationPresets.map((preset) => (
@@ -383,6 +384,7 @@ export function ElementInspector({
               key={preset}
               type="button"
               className={clsx('mini-button', normalizeRotation(element.rotation) === preset && 'active')}
+              disabled={geometryLocked}
               onClick={() => onPatch({ rotation: preset })}
             >
               {preset}°
@@ -390,22 +392,22 @@ export function ElementInspector({
           ))}
         </div>
         <div className="inspector-subhead">
-          <span>层级</span>
-          <strong>当前 {(element.zIndex ?? 0) + 1} / 共 {layerCount}</strong>
+          <span>元素顺序</span>
+          <strong>{element.zIndex === layerCount - 1 ? '最上方' : element.zIndex === 0 ? '最下方' : '中间'}</strong>
         </div>
         <div className="field-row">
-          <button className="mini-button" onClick={onBringToFront}>
+          <button className="mini-button" disabled={layerCount <= 1} onClick={onBringToFront}>
             置顶
           </button>
-          <button className="mini-button" onClick={onSendToBack}>
+          <button className="mini-button" disabled={layerCount <= 1} onClick={onSendToBack}>
             置底
           </button>
         </div>
         <div className="field-row">
-          <button className="mini-button" onClick={onBringForward}>
+          <button className="mini-button" disabled={layerCount <= 1} onClick={onBringForward}>
             上移
           </button>
-          <button className="mini-button" onClick={onSendBackward}>
+          <button className="mini-button" disabled={layerCount <= 1} onClick={onSendBackward}>
             下移
           </button>
         </div>
