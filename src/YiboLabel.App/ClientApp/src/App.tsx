@@ -73,6 +73,7 @@ import {
   createContentPatch,
   createElement,
   createId,
+  defaultFontFamily,
   getDefaultElementName,
   getQrTextAreaHeightMm,
   moveElementAfter,
@@ -1329,6 +1330,7 @@ export default function App() {
       const imported = importDlabelTemplate(ddlSource, file.name, {
         minDocumentSizeMm,
         minElementSizeMm,
+        defaultFontFamily,
         createBlankDocument,
         createElement,
         normalizeDocument,

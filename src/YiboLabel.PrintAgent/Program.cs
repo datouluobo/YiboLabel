@@ -32,7 +32,7 @@ if (!File.Exists(tsplPath))
 
 try
 {
-    var payload = await File.ReadAllTextAsync(tsplPath);
+    var payload = await File.ReadAllBytesAsync(tsplPath);
     using var channel = DlabelPrinterChannel.Open(devicePath);
     channel.SendRaw(payload);
     Console.WriteLine("Print agent sent payload successfully.");

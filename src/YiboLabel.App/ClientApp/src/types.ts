@@ -45,6 +45,10 @@ export interface LabelDocument {
   copies: number
   darkness: number
   gapMm: number
+  printRotation: number
+  printInvert: boolean
+  printOffsetXMm: number
+  printOffsetYMm: number
   elements: LabelElement[]
 }
 
@@ -68,6 +72,7 @@ export interface TextElement extends BaseElement {
   type: 'text'
   text: string
   fontSize: number
+  fontFamily: string
   bold: boolean
   align: 'left' | 'center' | 'right'
 }
@@ -79,6 +84,7 @@ export interface BarcodeElement extends BaseElement {
   showHumanReadable: boolean
   textPosition: 'bottom' | 'top'
   humanReadableFontSize: number
+  humanReadableFontFamily: string
 }
 
 export interface QrCodeElement extends BaseElement {
@@ -87,6 +93,7 @@ export interface QrCodeElement extends BaseElement {
   showHumanReadable: boolean
   textPosition: 'bottom' | 'top'
   humanReadableFontSize: number
+  humanReadableFontFamily: string
 }
 
 export interface LineElement extends BaseElement {

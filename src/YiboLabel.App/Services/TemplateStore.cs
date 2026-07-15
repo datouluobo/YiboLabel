@@ -274,6 +274,10 @@ public sealed class TemplateStore
                 Copies = 1,
                 GapMm = 2,
                 Darkness = 8,
+                PrintRotation = 0,
+                PrintInvert = false,
+                PrintOffsetXMm = 0,
+                PrintOffsetYMm = 0,
                 Elements =
                 [
                     new TextElement
@@ -285,6 +289,7 @@ public sealed class TemplateStore
                         Height = 6,
                         Text = "YiboLabel",
                         FontSize = 24,
+                        FontFamily = "Microsoft YaHei",
                         Bold = true,
                         Align = "left"
                     },
@@ -297,7 +302,8 @@ public sealed class TemplateStore
                         Height = 8,
                         Value = "YIBO-20260705",
                         Symbology = "CODE128",
-                        ShowHumanReadable = true
+                        ShowHumanReadable = true,
+                        HumanReadableFontFamily = "Microsoft YaHei"
                     },
                     new QrCodeElement
                     {
@@ -306,7 +312,8 @@ public sealed class TemplateStore
                         Y = 3,
                         Width = 8,
                         Height = 8,
-                        Value = "https://yibo.local/hello"
+                        Value = "https://yibo.local/hello",
+                        HumanReadableFontFamily = "Microsoft YaHei"
                     },
                     new RectangleElement
                     {
@@ -326,6 +333,7 @@ public sealed class TemplateStore
                         Height = 4,
                         Text = "HELLO LABEL",
                         FontSize = 20,
+                        FontFamily = "Microsoft YaHei",
                         Align = "left"
                     }
                 ]
@@ -358,6 +366,10 @@ file static class LabelDocumentExtensions
             Copies = document.Copies,
             Darkness = document.Darkness,
             GapMm = document.GapMm,
+            PrintRotation = document.PrintRotation,
+            PrintInvert = document.PrintInvert,
+            PrintOffsetXMm = document.PrintOffsetXMm,
+            PrintOffsetYMm = document.PrintOffsetYMm,
             Elements = document.Elements
         };
     }

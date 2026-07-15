@@ -25,6 +25,7 @@ export type DlabelImportResult = {
 export type DlabelImportDependencies = {
   minDocumentSizeMm: number
   minElementSizeMm: number
+  defaultFontFamily: string
   createBlankDocument: (name?: string) => LabelDocument
   createElement: (type: LabelElement['type'], document: LabelDocument, seed?: Partial<LabelElement>) => LabelElement
   normalizeDocument: (document: LabelDocument) => LabelDocument
@@ -83,6 +84,10 @@ export function importDlabelTemplate(source: string, fileName: string, dependenc
       copies: 1,
       darkness: 8,
       gapMm: 2,
+      printRotation: 0,
+      printInvert: false,
+      printOffsetXMm: 0,
+      printOffsetYMm: 0,
       elements: importedElements,
     }),
     warnings,
@@ -215,6 +220,7 @@ function parseDlabelObject(
       zIndex: index,
       text: textNode?.getAttribute('value') ?? '',
       fontSize: dependencies.clamp(Math.round(readDlabelNumber(node, 'fontsize', 18)), 8, 96),
+      fontFamily: dependencies.defaultFontFamily,
       bold: (node.getAttribute('fontbold') ?? '').toLowerCase() === 'true',
       align: mapDlabelTextAlign(node.getAttribute('alignment')),
     } satisfies TextElement
@@ -244,6 +250,7 @@ function parseDlabelObject(
         showHumanReadable: false,
         textPosition: 'bottom',
         humanReadableFontSize: 12,
+        humanReadableFontFamily: dependencies.defaultFontFamily,
       } satisfies QrCodeElement
     }
 
@@ -262,6 +269,7 @@ function parseDlabelObject(
       showHumanReadable: (node.getAttribute('textposition') ?? '0') !== '-1',
       textPosition: 'bottom',
       humanReadableFontSize: 12,
+      humanReadableFontFamily: dependencies.defaultFontFamily,
     } satisfies BarcodeElement
   }
 

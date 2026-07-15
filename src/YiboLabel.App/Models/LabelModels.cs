@@ -50,6 +50,14 @@ public sealed class LabelDocument
 
     public double GapMm { get; init; } = 2;
 
+    public int PrintRotation { get; init; }
+
+    public bool PrintInvert { get; init; }
+
+    public double PrintOffsetXMm { get; init; }
+
+    public double PrintOffsetYMm { get; init; }
+
     public required List<LabelElement> Elements { get; init; }
 }
 
@@ -87,6 +95,8 @@ public sealed class TextElement : LabelElement
 
     public int FontSize { get; init; } = 24;
 
+    public string FontFamily { get; init; } = "Microsoft YaHei";
+
     public bool Bold { get; init; }
 
     public string Align { get; init; } = "left";
@@ -103,6 +113,8 @@ public sealed class BarcodeElement : LabelElement
     public string TextPosition { get; init; } = "bottom";
 
     public int HumanReadableFontSize { get; init; } = 12;
+
+    public string HumanReadableFontFamily { get; init; } = "Microsoft YaHei";
 }
 
 public sealed class QrCodeElement : LabelElement
@@ -114,6 +126,8 @@ public sealed class QrCodeElement : LabelElement
     public string TextPosition { get; init; } = "bottom";
 
     public int HumanReadableFontSize { get; init; } = 12;
+
+    public string HumanReadableFontFamily { get; init; } = "Microsoft YaHei";
 }
 
 public sealed class LineElement : LabelElement

@@ -11,6 +11,7 @@ import type {
 
 export const minDocumentSizeMm = 20
 export const minElementSizeMm = 0.8
+export const defaultFontFamily = 'Microsoft YaHei'
 
 export const createId = () => crypto.randomUUID()
 
@@ -35,6 +36,10 @@ export const createBlankDocument = (name = '未命名标签'): LabelDocument =>
     copies: 1,
     darkness: 8,
     gapMm: 2,
+    printRotation: 0,
+    printInvert: false,
+    printOffsetXMm: 0,
+    printOffsetYMm: 0,
     elements: [
       {
         id: createId(),
@@ -47,6 +52,7 @@ export const createBlankDocument = (name = '未命名标签'): LabelDocument =>
         rotation: 0,
         text: 'YiboLabel',
         fontSize: 24,
+        fontFamily: defaultFontFamily,
         bold: true,
         align: 'left',
       },
@@ -69,11 +75,11 @@ export function createElement(type: LabelElement['type'], document: LabelDocumen
 
   const next =
     type === 'text'
-      ? { ...base, type, text: '新文本', fontSize: 22, bold: false, align: 'left' as const }
+      ? { ...base, type, text: '新文本', fontSize: 22, fontFamily: defaultFontFamily, bold: false, align: 'left' as const }
       : type === 'barcode'
-        ? { ...base, type, width: 28, height: 10, value: '1234567890', symbology: '128', showHumanReadable: true, textPosition: 'bottom' as const, humanReadableFontSize: 12 }
+        ? { ...base, type, width: 28, height: 10, value: '1234567890', symbology: '128', showHumanReadable: true, textPosition: 'bottom' as const, humanReadableFontSize: 12, humanReadableFontFamily: defaultFontFamily }
         : type === 'qrcode'
-          ? { ...base, type, width: 10, height: 10, value: 'https://yibo.local', showHumanReadable: false, textPosition: 'bottom' as const, humanReadableFontSize: 12 }
+          ? { ...base, type, width: 10, height: 10, value: 'https://yibo.local', showHumanReadable: false, textPosition: 'bottom' as const, humanReadableFontSize: 12, humanReadableFontFamily: defaultFontFamily }
           : type === 'line'
             ? { ...base, type, width: 20, height: 0.8, thickness: 2 }
             : type === 'rectangle'
@@ -94,6 +100,10 @@ export function normalizeDocument(document: LabelDocument): LabelDocument {
     copies: clamp(Math.round(document.copies || 1), 1, 99),
     darkness: clamp(roundTo(document.darkness || 8, 0.1), 1, 15),
     gapMm: clamp(roundTo(document.gapMm || 2, 0.1), 0, 20),
+    printRotation: normalizePrintRotation(document.printRotation),
+    printInvert: Boolean(document.printInvert),
+    printOffsetXMm: clamp(roundTo(document.printOffsetXMm ?? 0, 0.1), -20, 20),
+    printOffsetYMm: clamp(roundTo(document.printOffsetYMm ?? 0, 0.1), -20, 20),
     elements: [],
   }
 
@@ -133,6 +143,7 @@ export function normalizeElement(element: LabelElement, document: LabelDocument,
       ...common,
       text: textElement.text ?? '',
       fontSize: clamp(Math.round(textElement.fontSize || 22), 8, 96),
+      fontFamily: normalizeFontFamily(textElement.fontFamily),
       bold: Boolean(textElement.bold),
       align: textElement.align === 'center' || textElement.align === 'right' ? textElement.align : 'left',
     } as TextElement
@@ -147,6 +158,7 @@ export function normalizeElement(element: LabelElement, document: LabelDocument,
       showHumanReadable: Boolean(barcodeElement.showHumanReadable),
       textPosition: barcodeElement.textPosition === 'top' ? 'top' : 'bottom',
       humanReadableFontSize: clamp(Math.round(barcodeElement.humanReadableFontSize || 12), 8, 36),
+      humanReadableFontFamily: normalizeFontFamily(barcodeElement.humanReadableFontFamily),
     } as BarcodeElement
   }
 
@@ -170,6 +182,7 @@ export function normalizeElement(element: LabelElement, document: LabelDocument,
       showHumanReadable,
       textPosition: qrElement.textPosition === 'top' ? 'top' : 'bottom',
       humanReadableFontSize,
+      humanReadableFontFamily: normalizeFontFamily(qrElement.humanReadableFontFamily),
     } as QrCodeElement
   }
 
@@ -324,6 +337,11 @@ export function normalizeRotation(rotation: number) {
   return roundTo(normalized, 1)
 }
 
+export function normalizePrintRotation(rotation: number | undefined) {
+  const normalized = ((Math.round((rotation ?? 0) / 90) * 90) % 360 + 360) % 360
+  return normalized
+}
+
 export function roundTo(value: number, step: number) {
   return Math.round(value / step) * step
 }
@@ -360,6 +378,11 @@ export function getLayerMeta(element: LabelElement) {
             ? '矩形'
             : '图片'
   return `${getDefaultElementName(element.type)} · ${value || '空'}`
+}
+
+export function normalizeFontFamily(fontFamily: string | null | undefined) {
+  const normalized = fontFamily?.trim()
+  return normalized || defaultFontFamily
 }
 
 export function getElementOrderLabel(element: LabelElement, elementCount: number) {

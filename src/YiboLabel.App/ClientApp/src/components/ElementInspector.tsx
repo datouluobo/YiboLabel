@@ -3,7 +3,7 @@ import QRCode from 'qrcode'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ContentValueInput } from './ContentValueInput'
-import { clamp, getQrTextAreaHeightMm, getQrTextHeightMm, minElementSizeMm, normalizeRotation, pointsToMm, roundTo } from '../domain/labelDocument'
+import { clamp, defaultFontFamily, getQrTextAreaHeightMm, getQrTextHeightMm, minElementSizeMm, normalizeFontFamily, normalizeRotation, pointsToMm, roundTo } from '../domain/labelDocument'
 import type {
   BarcodeElement,
   ImageElement,
@@ -22,6 +22,14 @@ const barcodePresets = [
   { value: 'EAN8', label: 'EAN-8' },
   { value: 'UPCA', label: 'UPC-A' },
   { value: 'UPCE', label: 'UPC-E' },
+]
+const fontFamilyOptions = [
+  { value: 'Microsoft YaHei', label: '微软雅黑' },
+  { value: 'Microsoft YaHei UI', label: '微软雅黑 UI' },
+  { value: 'SimHei', label: '黑体' },
+  { value: 'SimSun', label: '宋体' },
+  { value: 'KaiTi', label: '楷体' },
+  { value: 'Arial', label: 'Arial' },
 ]
 
 export function ToolButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
@@ -129,7 +137,7 @@ export function ElementPreview({ element, canvasScale }: { element: LabelElement
 function TextPreview({ element, canvasScale }: { element: TextElement; canvasScale: number }) {
   const fontSizePx = Math.max(12, pointsToMm(element.fontSize) * canvasScale)
   const fontWeight = element.bold ? 700 : 500
-  const fontFamily = '"Microsoft YaHei", "微软雅黑", sans-serif'
+  const fontFamily = `"${normalizeFontFamily(element.fontFamily)}", "Microsoft YaHei", "微软雅黑", sans-serif`
   const availableWidth = Math.max(1, element.width * canvasScale - 4)
   const measuredWidth = useMemo(() => {
     const canvas = document.createElement('canvas')
@@ -175,18 +183,19 @@ function BarcodePreview({ element, canvasScale }: { element: BarcodeElement; can
       const canvasHeight = Math.max(48, Math.round(element.height * canvasScale))
       canvasRef.current.width = canvasWidth
       canvasRef.current.height = canvasHeight
-      const estimatedModules = Math.max(40, element.value.length * 11 + 35)
+      const moduleCount = getBarcodeModuleCount(element)
       const showValue = element.showHumanReadable
       const valueHeight = showValue ? Math.max(16, canvasHeight * 0.22) : 0
 
       JsBarcode(canvasRef.current, element.value || ' ', {
         format: mapBarcodePreviewFormat(element.symbology),
-        width: Math.max(1, Math.min(4, (canvasWidth * 0.92) / estimatedModules)),
+        width: Math.max(1, Math.min(4, Math.floor((canvasWidth * 0.92) / moduleCount))),
         height: Math.max(18, canvasHeight - valueHeight),
         displayValue: showValue,
         textPosition: element.textPosition,
         margin: 0,
         background: '#ffffff',
+        font: normalizeFontFamily(element.humanReadableFontFamily),
         fontSize: Math.max(8, element.humanReadableFontSize * canvasScale * 0.3),
         textMargin: Math.max(2, canvasHeight * 0.02),
       })
@@ -196,6 +205,18 @@ function BarcodePreview({ element, canvasScale }: { element: BarcodeElement; can
   }, [canvasScale, element])
 
   return <canvas ref={canvasRef} className="barcode-preview" />
+}
+
+function getBarcodeModuleCount(element: BarcodeElement) {
+  const data: { encodings?: Array<{ data?: string }> } = {}
+  JsBarcode(data, element.value || ' ', {
+    format: mapBarcodePreviewFormat(element.symbology),
+    displayValue: false,
+    margin: 0,
+  })
+
+  const moduleCount = data.encodings?.reduce((total, encoding) => total + (encoding.data?.length ?? 0), 0) ?? 0
+  return Math.max(40, moduleCount)
 }
 
 function QrPreview({ element, canvasScale }: { element: QrCodeElement; canvasScale: number }) {
@@ -213,15 +234,40 @@ function QrPreview({ element, canvasScale }: { element: QrCodeElement; canvasSca
   return (
     <div className={clsx('qr-preview-wrap', element.showHumanReadable && `text-${element.textPosition}`)}>
       {element.showHumanReadable && element.textPosition === 'top' ? (
-        <span style={{ fontSize: `${Math.max(8, element.humanReadableFontSize * canvasScale * 0.24)}px` }}>{element.value}</span>
+        <span style={{ fontSize: `${Math.max(8, element.humanReadableFontSize * canvasScale * 0.24)}px`, fontFamily: `"${normalizeFontFamily(element.humanReadableFontFamily)}", "Microsoft YaHei", "微软雅黑", sans-serif` }}>{element.value}</span>
       ) : null}
       <div className="qr-preview-box">
         <img className="qr-preview" src={dataUrl} alt="" />
       </div>
       {element.showHumanReadable && element.textPosition === 'bottom' ? (
-        <span style={{ fontSize: `${Math.max(8, element.humanReadableFontSize * canvasScale * 0.24)}px` }}>{element.value}</span>
+        <span style={{ fontSize: `${Math.max(8, element.humanReadableFontSize * canvasScale * 0.24)}px`, fontFamily: `"${normalizeFontFamily(element.humanReadableFontFamily)}", "Microsoft YaHei", "微软雅黑", sans-serif` }}>{element.value}</span>
       ) : null}
     </div>
+  )
+}
+
+function FontFamilyField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  const normalizedValue = normalizeFontFamily(value)
+
+  return (
+    <label>
+      {label}
+      <select value={normalizedValue} onChange={(event) => onChange(event.target.value)}>
+        {fontFamilyOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }
 
@@ -229,6 +275,18 @@ function mapBarcodePreviewFormat(symbology: string) {
   const normalized = symbology.replace(/[_\s-]/g, '').toUpperCase()
   if (normalized === '128' || normalized === 'CODE128') {
     return 'CODE128'
+  }
+
+  if (normalized === 'CODE128A') {
+    return 'CODE128A'
+  }
+
+  if (normalized === 'CODE128B') {
+    return 'CODE128B'
+  }
+
+  if (normalized === 'CODE128C') {
+    return 'CODE128C'
   }
 
   if (normalized === '39' || normalized === 'CODE39') {
@@ -428,6 +486,13 @@ export function ElementInspector({
               字号
               <input type="number" min="8" max="96" value={element.fontSize} onChange={(event) => onPatch({ fontSize: Number(event.target.value) } as Partial<TextElement>)} />
             </label>
+            <FontFamilyField
+              label="字体"
+              value={element.fontFamily ?? defaultFontFamily}
+              onChange={(value) => onPatch({ fontFamily: value } as Partial<TextElement>)}
+            />
+          </div>
+          <div className="field-row">
             <div className="inline-field">
               <span>对齐</span>
               <div className="segmented-row">
@@ -506,6 +571,11 @@ export function ElementInspector({
               <input type="number" min="8" max="36" value={element.humanReadableFontSize} onChange={(event) => onPatch({ humanReadableFontSize: Number(event.target.value) } as Partial<BarcodeElement>)} />
             </label>
           </div>
+          <FontFamilyField
+            label="文字字体"
+            value={element.humanReadableFontFamily ?? defaultFontFamily}
+            onChange={(value) => onPatch({ humanReadableFontFamily: value } as Partial<BarcodeElement>)}
+          />
         </InspectorSection>
       )}
 
@@ -540,6 +610,11 @@ export function ElementInspector({
               <input type="number" min="8" max="36" value={element.humanReadableFontSize} onChange={(event) => patchQrFontSize(Number(event.target.value))} />
             </label>
           </div>
+          <FontFamilyField
+            label="文字字体"
+            value={element.humanReadableFontFamily ?? defaultFontFamily}
+            onChange={(value) => onPatch({ humanReadableFontFamily: value } as Partial<QrCodeElement>)}
+          />
         </InspectorSection>
       )}
 

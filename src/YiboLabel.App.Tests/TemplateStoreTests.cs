@@ -142,6 +142,10 @@ public sealed class TemplateStoreTests : IDisposable
             Copies = 1,
             Darkness = 8,
             GapMm = 2,
+            PrintRotation = 0,
+            PrintInvert = false,
+            PrintOffsetXMm = 0,
+            PrintOffsetYMm = 0,
             Elements =
             [
                 new TextElement

@@ -76,6 +76,45 @@ export function DocumentPrintDialog({
               <input type="number" min="1" max="15" step="1" value={labelDocument.darkness} onChange={(event) => onDocumentFieldChange('darkness', Number(event.target.value))} />
             </label>
           </div>
+          <div className="field-row">
+            <label>
+              打印方向
+              <select value={labelDocument.printRotation} onChange={(event) => onDocumentFieldChange('printRotation', Number(event.target.value))}>
+                <option value="0">正常</option>
+                <option value="90">顺时针 90°</option>
+                <option value="180">旋转 180°</option>
+                <option value="270">逆时针 90°</option>
+              </select>
+            </label>
+            <label className="toggle-row">
+              黑白反相
+              <input type="checkbox" checked={labelDocument.printInvert} onChange={(event) => onDocumentFieldChange('printInvert', event.target.checked)} />
+            </label>
+          </div>
+          <div className="field-row">
+            <label>
+              横向微调 (mm)
+              <input
+                type="number"
+                min="-20"
+                max="20"
+                step="0.1"
+                value={labelDocument.printOffsetXMm}
+                onChange={(event) => onDocumentFieldChange('printOffsetXMm', Number(event.target.value))}
+              />
+            </label>
+            <label>
+              纵向微调 (mm)
+              <input
+                type="number"
+                min="-20"
+                max="20"
+                step="0.1"
+                value={labelDocument.printOffsetYMm}
+                onChange={(event) => onDocumentFieldChange('printOffsetYMm', Number(event.target.value))}
+              />
+            </label>
+          </div>
           <label>
             打印份数
             <input type="number" min="1" max="99" value={labelDocument.copies} onChange={(event) => onDocumentFieldChange('copies', Number(event.target.value))} />
