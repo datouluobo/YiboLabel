@@ -18,6 +18,7 @@ type EditorCanvasPanelProps = {
   bindableSelectedCount: number
   contentPickerOpen: boolean
   groupBinderOpen: boolean
+  exporting: boolean
   canvasScale: number
   horizontalRulerTicks: RulerTick[]
   verticalRulerTicks: RulerTick[]
@@ -54,6 +55,7 @@ export function EditorCanvasPanel({
   bindableSelectedCount,
   contentPickerOpen,
   groupBinderOpen,
+  exporting,
   canvasScale,
   horizontalRulerTicks,
   verticalRulerTicks,
@@ -158,11 +160,11 @@ export function EditorCanvasPanel({
                 }}
                 onPointerDown={onCanvasPointerDown}
               >
-                <div className="grid-overlay" />
+                {exporting ? null : <div className="grid-overlay" />}
                 {resolvedVisibleElements.map((element) => (
                   <div
                     key={element.id}
-                    className={clsx('canvas-element', selectedElementIds.includes(element.id) && 'selected', element.locked && 'locked')}
+                    className={clsx('canvas-element', !exporting && selectedElementIds.includes(element.id) && 'selected', element.locked && 'locked')}
                     style={{
                       left: `${element.x * canvasScale}px`,
                       top: `${element.y * canvasScale}px`,
@@ -177,7 +179,7 @@ export function EditorCanvasPanel({
                   </div>
                 ))}
 
-                {selectionBounds ? (
+                {!exporting && selectionBounds ? (
                   <div
                     className="selection-outline"
                     style={{
@@ -204,7 +206,7 @@ export function EditorCanvasPanel({
                   </div>
                 ) : null}
 
-                {snapLines.map((line) => (
+                {exporting ? null : snapLines.map((line) => (
                   <div
                     key={`${line.orientation}-${line.value}`}
                     className={clsx('snap-line', line.orientation)}
@@ -212,7 +214,7 @@ export function EditorCanvasPanel({
                   />
                 ))}
 
-                {marqueeBounds ? (
+                {!exporting && marqueeBounds ? (
                   <div
                     className="marquee-box"
                     style={{

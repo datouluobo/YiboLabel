@@ -39,6 +39,7 @@ import { EditorCanvasPanel } from './components/EditorCanvasPanel'
 import { EditorSidebar } from './components/EditorSidebar'
 import { EditorTabStrip } from './components/EditorTabStrip'
 import { ElementInspector, MultiSelectionInspector } from './components/ElementInspector'
+import { ExportDialog, type ExportDialogOptions } from './components/ExportDialog'
 import { GroupBindingPanel } from './components/GroupBindingPanel'
 import { LexiconManager } from './components/LexiconManager'
 import { TemplateLibraryView } from './components/TemplateLibraryView'
@@ -91,6 +92,7 @@ import {
   sortElements,
   sortElementsByListOrder,
 } from './domain/labelDocument'
+import { renderLabelCanvasElementToDataUrl, renderLabelDocumentToDataUrl, renderLabelDocumentToPdfBase64 } from './domain/exportRenderer'
 import {
   toTemplateSummary,
 } from './domain/templateMetadata'
@@ -104,6 +106,11 @@ import {
   type WorkspaceSnapshot,
 } from './domain/workspace'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import {
+  chooseExportPath,
+  writeBase64ExportFile,
+  writeTextExportFile,
+} from './platform/exportBridge'
 import type {
   AppStateResponse,
   DuplicateTemplateRequest,
@@ -190,6 +197,9 @@ export default function App() {
   const [printing, setPrinting] = useState(false)
   const [refreshingPrinters, setRefreshingPrinters] = useState(false)
   const [showDocumentDialog, setShowDocumentDialog] = useState(false)
+  const [showExportDialog, setShowExportDialog] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportOptions, setExportOptions] = useState<ExportDialogOptions>({ format: 'pdf', pdfPaperMode: 'label' })
   const [layersCollapsed, setLayersCollapsed] = useState(false)
   const [, setActivity] = useState<string[]>([])
   const [interaction, setInteraction] = useState<EditorInteraction | null>(null)
@@ -1267,6 +1277,51 @@ export default function App() {
     }
   }
 
+  async function exportCurrent() {
+    if (!activeTab || exporting) {
+      return
+    }
+
+    const options = exportOptions
+    const format = options.format
+    const suggestedName = buildExportFileName(labelDocument.name, format)
+    setExporting(true)
+
+    try {
+      await waitForPaint()
+      const saveResult = await chooseExportPath(format, suggestedName)
+      if (saveResult.cancelled || !saveResult.path) {
+        setStatus('已取消导出。')
+        return
+      }
+
+      if (format === 'template') {
+        await writeTextExportFile(saveResult.path, buildTemplateExportJson(labelDocument))
+      } else if (format === 'png' || format === 'jpg') {
+        const dataUrl = canvasRef.current
+          ? await renderLabelCanvasElementToDataUrl(canvasRef.current, labelDocument, format)
+          : await renderLabelDocumentToDataUrl(labelDocument, format)
+        await writeBase64ExportFile(saveResult.path, dataUrlToBase64(dataUrl))
+      } else {
+        if (!canvasRef.current) {
+          throw new Error('没有可导出的标签画布。')
+        }
+
+        const pdfBase64 = await renderLabelDocumentToPdfBase64(canvasRef.current, labelDocument, options.pdfPaperMode)
+        await writeBase64ExportFile(saveResult.path, pdfBase64)
+      }
+
+      const fileName = saveResult.fileName ?? suggestedName
+      setStatus(`已导出 ${getExportFormatLabel(format)}：${fileName}`)
+      queueActivity(`已导出 ${getExportFormatLabel(format)}：${labelDocument.name}`)
+      setShowExportDialog(false)
+    } catch (error) {
+      setStatus(`导出失败：${getErrorMessage(error)}`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   async function refreshPrinters() {
     setRefreshingPrinters(true)
     try {
@@ -1706,6 +1761,7 @@ export default function App() {
         refreshingPrinters={refreshingPrinters}
         saving={saving}
         printing={printing}
+        exporting={exporting}
         activeTemplateId={activeTemplateId}
         onToggleSurface={toggleSurface}
         onShowDocumentDialog={() => setShowDocumentDialog(true)}
@@ -1717,6 +1773,7 @@ export default function App() {
         onRefreshPrinters={() => void refreshPrinters()}
         onSaveCurrentTemplate={() => void saveCurrentTemplate()}
         onSaveAsTemplate={() => void saveAsTemplate()}
+        onShowExportDialog={() => setShowExportDialog(true)}
         onPrintCurrent={printCurrent}
       />
 
@@ -1813,6 +1870,7 @@ export default function App() {
               bindableSelectedCount={bindableSelectedElements.length}
               contentPickerOpen={contentPickerOpen}
               groupBinderOpen={groupBinderOpen}
+              exporting={exporting}
               canvasScale={canvasScale}
               horizontalRulerTicks={horizontalRulerTicks}
               verticalRulerTicks={verticalRulerTicks}
@@ -1914,6 +1972,82 @@ export default function App() {
         onSaveAsTemplate={() => void saveAsTemplate()}
         onPrintCurrent={printCurrent}
       />
+
+      <ExportDialog
+        open={showExportDialog && hasActiveTab}
+        exporting={exporting}
+        options={exportOptions}
+        onOptionsChange={setExportOptions}
+        onClose={() => {
+          if (!exporting) {
+            setShowExportDialog(false)
+          }
+        }}
+        onExport={() => void exportCurrent()}
+      />
     </div>
   )
+}
+
+function buildExportFileName(name: string, format: ExportDialogOptions['format']) {
+  const baseName = sanitizeSuggestedFileName(name || '未命名标签')
+  const extension = format === 'template'
+    ? '.yblabel.json'
+    : format === 'png'
+      ? '.png'
+      : format === 'jpg'
+        ? '.jpg'
+        : '.pdf'
+  return baseName.endsWith(extension) ? baseName : `${baseName}${extension}`
+}
+
+function sanitizeSuggestedFileName(name: string) {
+  const invalidCharacters = new Set(['<', '>', ':', '"', '/', '\\', '|', '?', '*'])
+  const sanitized = [...name]
+    .map((character) => invalidCharacters.has(character) || character.charCodeAt(0) < 32 ? '_' : character)
+    .join('')
+    .trim()
+  return sanitized || '未命名标签'
+}
+
+function getExportFormatLabel(format: ExportDialogOptions['format']) {
+  return format === 'template'
+    ? '本地模板'
+    : format === 'png'
+      ? 'PNG'
+      : format === 'jpg'
+        ? 'JPG'
+        : 'PDF'
+}
+
+function buildTemplateExportJson(labelDocument: LabelDocument) {
+  return JSON.stringify(
+    {
+      schemaVersion: 1,
+      kind: 'yibolabel-template-export',
+      exportedAt: new Date().toISOString(),
+      name: labelDocument.name,
+      document: labelDocument,
+    },
+    null,
+    2,
+  )
+}
+
+function dataUrlToBase64(dataUrl: string) {
+  const marker = 'base64,'
+  const markerIndex = dataUrl.indexOf(marker)
+  if (markerIndex < 0) {
+    throw new Error('图片导出数据格式异常。')
+  }
+
+  return dataUrl.slice(markerIndex + marker.length)
+}
+
+function waitForPaint() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve())
+    })
+  })
 }

@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Reflection;
+using System.Text;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -265,12 +266,24 @@ internal sealed class MainForm : Form
             ?? "dev";
     }
 
-    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs eventArgs)
+    private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs eventArgs)
     {
         try
         {
             using var payload = JsonDocument.Parse(eventArgs.WebMessageAsJson);
-            if (!payload.RootElement.TryGetProperty("type", out var typeElement) || typeElement.GetString() != "window-chrome")
+            if (!payload.RootElement.TryGetProperty("type", out var typeElement))
+            {
+                return;
+            }
+
+            var type = typeElement.GetString();
+            if (type is "export-save-dialog" or "export-write-file" or "export-print-pdf")
+            {
+                await HandleExportMessageAsync(type, payload.RootElement);
+                return;
+            }
+
+            if (type != "window-chrome")
             {
                 return;
             }
@@ -296,6 +309,199 @@ internal sealed class MainForm : Form
         {
             // Ignore malformed bridge messages from the web surface.
         }
+    }
+
+    private async Task HandleExportMessageAsync(string type, JsonElement payload)
+    {
+        var requestId = payload.TryGetProperty("requestId", out var requestIdElement)
+            ? requestIdElement.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(requestId))
+        {
+            return;
+        }
+
+        try
+        {
+            switch (type)
+            {
+                case "export-save-dialog":
+                    SendExportResponse("export-save-dialog-result", requestId, ShowExportSaveDialog(payload));
+                    break;
+                case "export-write-file":
+                    WriteExportFile(payload);
+                    SendExportResponse("export-write-file-result", requestId, new { success = true });
+                    break;
+                case "export-print-pdf":
+                    await PrintExportPdfAsync(payload);
+                    SendExportResponse("export-print-pdf-result", requestId, new { success = true });
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            SendExportResponse(
+                type switch
+                {
+                    "export-save-dialog" => "export-save-dialog-result",
+                    "export-write-file" => "export-write-file-result",
+                    "export-print-pdf" => "export-print-pdf-result",
+                    _ => "export-result"
+                },
+                requestId,
+                new
+                {
+                    success = false,
+                    error = ex.Message
+                });
+        }
+    }
+
+    private object ShowExportSaveDialog(JsonElement payload)
+    {
+        var format = payload.TryGetProperty("format", out var formatElement)
+            ? formatElement.GetString()
+            : null;
+        var suggestedName = payload.TryGetProperty("suggestedName", out var suggestedNameElement)
+            ? suggestedNameElement.GetString()
+            : null;
+
+        var options = GetExportDialogOptions(format);
+        using var dialog = new SaveFileDialog
+        {
+            Title = "导出标签",
+            FileName = SanitizeFileName(string.IsNullOrWhiteSpace(suggestedName) ? "未命名标签" : suggestedName, options.Extension),
+            Filter = options.Filter,
+            DefaultExt = options.Extension.TrimStart('.'),
+            AddExtension = true,
+            OverwritePrompt = true,
+            RestoreDirectory = true
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return new
+            {
+                success = true,
+                cancelled = true
+            };
+        }
+
+        return new
+        {
+            success = true,
+            cancelled = false,
+            path = dialog.FileName,
+            fileName = Path.GetFileName(dialog.FileName)
+        };
+    }
+
+    private static (string Filter, string Extension) GetExportDialogOptions(string? format)
+    {
+        return format switch
+        {
+            "template" => ("YiboLabel template (*.yblabel.json)|*.yblabel.json", ".yblabel.json"),
+            "png" => ("PNG image (*.png)|*.png", ".png"),
+            "jpg" => ("JPEG image (*.jpg)|*.jpg;*.jpeg", ".jpg"),
+            "pdf" => ("PDF document (*.pdf)|*.pdf", ".pdf"),
+            _ => throw new InvalidOperationException("未知导出格式。")
+        };
+    }
+
+    private static string SanitizeFileName(string fileName, string extension)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitized = new string(fileName.Select(character => invalidChars.Contains(character) ? '_' : character).ToArray()).Trim();
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            sanitized = "未命名标签";
+        }
+
+        return sanitized.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
+            ? sanitized
+            : sanitized + extension;
+    }
+
+    private static void WriteExportFile(JsonElement payload)
+    {
+        var path = payload.GetProperty("path").GetString();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new InvalidOperationException("缺少导出路径。");
+        }
+
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var contentKind = payload.TryGetProperty("contentKind", out var contentKindElement)
+            ? contentKindElement.GetString()
+            : "text";
+
+        if (contentKind == "base64")
+        {
+            var base64 = payload.GetProperty("contentBase64").GetString() ?? string.Empty;
+            File.WriteAllBytes(path, Convert.FromBase64String(base64));
+            return;
+        }
+
+        var text = payload.GetProperty("contentText").GetString() ?? string.Empty;
+        File.WriteAllText(path, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    }
+
+    private async Task PrintExportPdfAsync(JsonElement payload)
+    {
+        var path = payload.GetProperty("path").GetString();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new InvalidOperationException("缺少 PDF 导出路径。");
+        }
+
+        var widthMm = payload.TryGetProperty("pageWidthMm", out var widthElement) ? widthElement.GetDouble() : 210d;
+        var heightMm = payload.TryGetProperty("pageHeightMm", out var heightElement) ? heightElement.GetDouble() : 297d;
+        var orientation = payload.TryGetProperty("orientation", out var orientationElement)
+            ? orientationElement.GetString()
+            : (widthMm > heightMm ? "landscape" : "portrait");
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var settings = webView.CoreWebView2.Environment.CreatePrintSettings();
+        settings.PageWidth = MillimetersToInches(widthMm);
+        settings.PageHeight = MillimetersToInches(heightMm);
+        settings.Orientation = string.Equals(orientation, "landscape", StringComparison.OrdinalIgnoreCase)
+            ? CoreWebView2PrintOrientation.Landscape
+            : CoreWebView2PrintOrientation.Portrait;
+        settings.MarginTop = 0;
+        settings.MarginBottom = 0;
+        settings.MarginLeft = 0;
+        settings.MarginRight = 0;
+        settings.ShouldPrintBackgrounds = true;
+        settings.ShouldPrintHeaderAndFooter = false;
+        settings.MediaSize = CoreWebView2PrintMediaSize.Custom;
+
+        var printed = await webView.CoreWebView2.PrintToPdfAsync(path, settings);
+        if (!printed)
+        {
+            throw new InvalidOperationException("WebView2 未能生成 PDF。");
+        }
+    }
+
+    private static double MillimetersToInches(double millimeters) => Math.Max(1, millimeters) / 25.4d;
+
+    private void SendExportResponse(string type, string requestId, object payload)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            type,
+            requestId,
+            payload
+        });
+        webView.CoreWebView2.PostWebMessageAsJson(json);
     }
 
     private void BeginWindowDrag()

@@ -1,4 +1,4 @@
-import { BookOpen, Printer, RefreshCw, RotateCcw, Save, Upload } from 'lucide-react'
+import { BookOpen, Download, Printer, RefreshCw, RotateCcw, Save, Upload } from 'lucide-react'
 import clsx from 'clsx'
 import { sendWindowChromeCommand } from '../platform/windowChrome'
 import type { EditorTab } from '../domain/workspace'
@@ -19,6 +19,7 @@ type WorkspaceTopbarProps = {
   refreshingPrinters: boolean
   saving: boolean
   printing: boolean
+  exporting: boolean
   activeTemplateId: string | null
   onToggleSurface: (surface: 'templates' | 'lexicons') => void
   onShowDocumentDialog: () => void
@@ -30,6 +31,7 @@ type WorkspaceTopbarProps = {
   onRefreshPrinters: () => void
   onSaveCurrentTemplate: () => void
   onSaveAsTemplate: () => void
+  onShowExportDialog: () => void
   onPrintCurrent: () => void
 }
 
@@ -48,6 +50,7 @@ export function WorkspaceTopbar({
   refreshingPrinters,
   saving,
   printing,
+  exporting,
   activeTemplateId,
   onToggleSurface,
   onShowDocumentDialog,
@@ -59,6 +62,7 @@ export function WorkspaceTopbar({
   onRefreshPrinters,
   onSaveCurrentTemplate,
   onSaveAsTemplate,
+  onShowExportDialog,
   onPrintCurrent,
 }: WorkspaceTopbarProps) {
   return (
@@ -153,6 +157,10 @@ export function WorkspaceTopbar({
         <button className="ghost-button" onClick={onSaveAsTemplate} disabled={!hasActiveTab || saving}>
           <Save size={16} />
           另存为
+        </button>
+        <button className="ghost-button" onClick={onShowExportDialog} disabled={!hasActiveTab || exporting}>
+          <Download size={16} />
+          {exporting ? '导出中...' : '导出'}
         </button>
         <button className="print-button" onClick={onPrintCurrent} disabled={!hasActiveTab || printing || !currentPrinter?.isAvailable} title={currentPrinter?.isAvailable ? undefined : currentPrinter?.statusMessage ?? '没有可用打印机'}>
           <Printer size={16} />
