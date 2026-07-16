@@ -142,7 +142,7 @@ export function normalizeElement(element: LabelElement, document: LabelDocument,
     return {
       ...common,
       text: textElement.text ?? '',
-      fontSize: clamp(Math.round(textElement.fontSize || 22), 8, 96),
+      fontSize: clamp(Math.round(textElement.fontSize || 22), 4, 96),
       fontFamily: normalizeFontFamily(textElement.fontFamily),
       bold: Boolean(textElement.bold),
       align: textElement.align === 'center' || textElement.align === 'right' ? textElement.align : 'left',
@@ -157,14 +157,14 @@ export function normalizeElement(element: LabelElement, document: LabelDocument,
       symbology: barcodeElement.symbology?.trim() || '128',
       showHumanReadable: Boolean(barcodeElement.showHumanReadable),
       textPosition: barcodeElement.textPosition === 'top' ? 'top' : 'bottom',
-      humanReadableFontSize: clamp(Math.round(barcodeElement.humanReadableFontSize || 12), 8, 36),
+      humanReadableFontSize: clamp(Math.round(barcodeElement.humanReadableFontSize || 12), 4, 36),
       humanReadableFontFamily: normalizeFontFamily(barcodeElement.humanReadableFontFamily),
     } as BarcodeElement
   }
 
   if (normalizedType === 'qrcode') {
     const qrElement = element as Partial<QrCodeElement>
-    const humanReadableFontSize = clamp(Math.round(qrElement.humanReadableFontSize || 12), 8, 36)
+    const humanReadableFontSize = clamp(Math.round(qrElement.humanReadableFontSize || 12), 4, 36)
     const showHumanReadable = Boolean(qrElement.showHumanReadable)
     const textHeight = showHumanReadable ? getQrTextHeightMm(humanReadableFontSize) : 0
     const maxCoreSize = Math.max(minElementSizeMm, Math.min(document.widthMm, document.heightMm - textHeight))

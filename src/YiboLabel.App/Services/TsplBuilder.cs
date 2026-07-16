@@ -20,8 +20,9 @@ public sealed class TsplBuilder
     {
         var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
+        var surfaceSize = GetPrintSurfaceSize(document);
 
-        WriteLine(writer, $"SIZE {document.WidthMm:0.##} mm,{document.HeightMm:0.##} mm");
+        WriteLine(writer, $"SIZE {surfaceSize.WidthMm:0.##} mm,{surfaceSize.HeightMm:0.##} mm");
         WriteLine(writer, $"GAP {document.GapMm:0.##} mm,0 mm");
         WriteLine(writer, $"DENSITY {Math.Clamp((int)Math.Round(document.Darkness), 1, 15)}");
         WriteLine(writer, "DIRECTION 1");
@@ -120,64 +121,44 @@ public sealed class TsplBuilder
     {
         using var brush = new SolidBrush(Color.Black);
         using var font = CreateTextFont(element.FontSize, element.Bold, element.FontFamily);
-        using var format = new StringFormat
-        {
-            Alignment = element.Align switch
-            {
-                "center" => StringAlignment.Center,
-                "right" => StringAlignment.Far,
-                _ => StringAlignment.Near
-            },
-            LineAlignment = StringAlignment.Center,
-            Trimming = StringTrimming.None,
-            FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.NoClip | StringFormatFlags.FitBlackBox
-        };
-
-        graphics.DrawString(element.Text, font, brush, bounds, format);
+        DrawFittedText(graphics, element.Text, font, brush, bounds, element.Align);
     }
 
     private static void DrawBarcode(Graphics graphics, BarcodeElement element, RectangleF bounds)
     {
         var encoding = ParseBarcodeFormat(element.Symbology);
         var margin = 0;
-        var barcodeHeight = Math.Max(1, (int)Math.Floor(bounds.Height * (element.ShowHumanReadable ? 0.72 : 1)));
+        var requestedFontSize = ConvertPointSizeToPixels(element.HumanReadableFontSize);
+        var layout = GetCodeElementLayout(bounds, element.ShowHumanReadable, element.TextPosition, requestedFontSize, squareCode: false);
         var barcodeBitmap = new BarcodeWriterPixelData
         {
             Format = encoding,
             Options = new EncodingOptions
             {
-                Width = Math.Max(16, (int)Math.Ceiling(bounds.Width)),
-                Height = Math.Max(24, barcodeHeight),
+                Width = Math.Max(16, (int)Math.Ceiling(layout.Code.Width)),
+                Height = Math.Max(16, (int)Math.Ceiling(layout.Code.Height)),
                 Margin = margin,
-                PureBarcode = !element.ShowHumanReadable
+                PureBarcode = true
             }
         }.Write(element.Value);
 
         using var bitmap = PixelDataToBitmap(barcodeBitmap);
-        graphics.DrawImage(bitmap, bounds.Left, bounds.Top, bounds.Width, barcodeHeight);
+        graphics.DrawImage(bitmap, layout.Code.Left, layout.Code.Top, layout.Code.Width, layout.Code.Height);
 
-        if (!element.ShowHumanReadable)
+        if (layout.Text is null)
         {
             return;
         }
 
-        var textAreaTop = bounds.Top + barcodeHeight;
-        var textAreaHeight = Math.Max(8, bounds.Height - barcodeHeight);
         using var brush = new SolidBrush(Color.Black);
-        using var font = CreateTextFont(element.HumanReadableFontSize, bold: false, element.HumanReadableFontFamily);
-        using var format = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center,
-            FormatFlags = StringFormatFlags.NoWrap
-        };
-        graphics.DrawString(element.Value, font, brush, new RectangleF(bounds.Left, textAreaTop, bounds.Width, textAreaHeight), format);
+        using var humanReadableFont = CreateTextFontFromPixels(layout.FontSize, bold: false, element.HumanReadableFontFamily);
+        DrawFittedText(graphics, element.Value, humanReadableFont, brush, layout.Text.Value, "center");
     }
 
     private static void DrawQrCode(Graphics graphics, QrCodeElement element, RectangleF bounds)
     {
-        var qrHeight = Math.Max(16, (int)Math.Floor(bounds.Height * (element.ShowHumanReadable ? 0.76 : 1)));
-        var qrSize = Math.Max(16, Math.Min((int)Math.Ceiling(bounds.Width), qrHeight));
+        var layout = GetCodeElementLayout(bounds, element.ShowHumanReadable, element.TextPosition, ConvertPointSizeToPixels(element.HumanReadableFontSize), squareCode: true);
+        var qrSize = Math.Max(16, (int)Math.Ceiling(layout.Code.Width));
         var qrBitmap = new BarcodeWriterPixelData
         {
             Format = BarcodeFormat.QR_CODE,
@@ -192,38 +173,39 @@ public sealed class TsplBuilder
 
         using var bitmap = PixelDataToBitmap(qrBitmap);
         graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-        graphics.DrawImage(bitmap, bounds.Left, bounds.Top, qrSize, qrSize);
+        graphics.DrawImage(bitmap, layout.Code.Left, layout.Code.Top, layout.Code.Width, layout.Code.Height);
 
-        if (!element.ShowHumanReadable)
+        if (layout.Text is null)
         {
             return;
         }
 
-        var fontY = string.Equals(element.TextPosition, "top", StringComparison.OrdinalIgnoreCase)
-            ? bounds.Top - Math.Max(10, bounds.Height * 0.22f)
-            : bounds.Top + qrSize;
-        var textBounds = new RectangleF(bounds.Left, Math.Max(0, fontY), bounds.Width, Math.Max(10, bounds.Height - qrSize));
         using var brush = new SolidBrush(Color.Black);
-        using var font = CreateTextFont(element.HumanReadableFontSize, bold: false, element.HumanReadableFontFamily);
-        using var format = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center,
-            FormatFlags = StringFormatFlags.NoWrap
-        };
-        graphics.DrawString(element.Value, font, brush, textBounds, format);
+        using var font = CreateTextFontFromPixels(layout.FontSize, bold: false, element.HumanReadableFontFamily);
+        DrawFittedText(graphics, element.Value, font, brush, layout.Text.Value, "center");
     }
 
     private static void DrawLine(Graphics graphics, LineElement element, RectangleF bounds)
     {
         using var brush = new SolidBrush(Color.Black);
-        graphics.FillRectangle(brush, bounds);
+        var strokeHeight = Math.Min(
+            bounds.Height,
+            Math.Max(1f, (float)(element.Thickness * DotsPerMillimeter * 0.2)));
+        var y = bounds.Top + ((bounds.Height - strokeHeight) / 2f);
+        graphics.FillRectangle(brush, bounds.Left, y, bounds.Width, strokeHeight);
     }
 
     private static void DrawRectangle(Graphics graphics, RectangleElement element, RectangleF bounds)
     {
-        using var pen = new Pen(Color.Black, Math.Max(1, element.Thickness));
-        graphics.DrawRectangle(pen, bounds.X, bounds.Y, bounds.Width, bounds.Height);
+        var penWidth = Math.Max(1f, (float)(element.Thickness * DotsPerMillimeter * 0.12));
+        using var pen = new Pen(Color.Black, penWidth);
+        var inset = penWidth / 2f;
+        graphics.DrawRectangle(
+            pen,
+            bounds.X + inset,
+            bounds.Y + inset,
+            Math.Max(1f, bounds.Width - penWidth),
+            Math.Max(1f, bounds.Height - penWidth));
     }
 
     private static void DrawImage(Graphics graphics, ImageElement element, RectangleF bounds)
@@ -309,9 +291,96 @@ public sealed class TsplBuilder
         }
     }
 
+    private static (double WidthMm, double HeightMm) GetPrintSurfaceSize(LabelDocument document)
+    {
+        var normalizedRotation = ((document.PrintRotation % 360) + 360) % 360;
+        return normalizedRotation is 90 or 270
+            ? (document.HeightMm, document.WidthMm)
+            : (document.WidthMm, document.HeightMm);
+    }
+
+    private static CodeElementLayout GetCodeElementLayout(RectangleF bounds, bool showText, string? textPosition, float requestedFontSize, bool squareCode)
+    {
+        if (!showText)
+        {
+            return new CodeElementLayout(FitCodeRect(bounds, squareCode), null, requestedFontSize);
+        }
+
+        var verticalPadding = 2f;
+        var gap = 0f;
+        var naturalTextBlockHeight = (requestedFontSize * 1.18f) + (verticalPadding * 2f);
+        var textBlockHeight = Math.Min(bounds.Height, naturalTextBlockHeight);
+        var remainingHeight = Math.Max(1f, bounds.Height - textBlockHeight - gap);
+        var isTopText = string.Equals(textPosition, "top", StringComparison.OrdinalIgnoreCase);
+        var codeBounds = isTopText
+            ? new RectangleF(bounds.Left, bounds.Top + textBlockHeight + gap, bounds.Width, remainingHeight)
+            : new RectangleF(bounds.Left, bounds.Top, bounds.Width, remainingHeight);
+        var textBounds = isTopText
+            ? new RectangleF(bounds.Left, bounds.Top, bounds.Width, textBlockHeight)
+            : new RectangleF(bounds.Left, bounds.Bottom - textBlockHeight, bounds.Width, textBlockHeight);
+
+        return new CodeElementLayout(FitCodeRect(codeBounds, squareCode), textBounds, requestedFontSize);
+    }
+
+    private static RectangleF FitCodeRect(RectangleF bounds, bool squareCode)
+    {
+        if (!squareCode)
+        {
+            return bounds;
+        }
+
+        var size = Math.Max(1f, Math.Min(bounds.Width, bounds.Height));
+        return new RectangleF(
+            bounds.Left + ((bounds.Width - size) / 2f),
+            bounds.Top + ((bounds.Height - size) / 2f),
+            size,
+            size);
+    }
+
+    private static void DrawFittedText(Graphics graphics, string text, Font font, Brush brush, RectangleF bounds, string? align)
+    {
+        text ??= string.Empty;
+        using var measureFormat = new StringFormat(StringFormat.GenericTypographic)
+        {
+            FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.FitBlackBox
+        };
+
+        var measured = graphics.MeasureString(string.IsNullOrEmpty(text) ? " " : text, font, SizeF.Empty, measureFormat);
+        var availableWidth = Math.Max(1f, bounds.Width - 4f);
+        var fitScale = Clamp(availableWidth / Math.Max(1f, measured.Width), 0.55f, 1f);
+        var scaledWidth = measured.Width * fitScale;
+        var drawX = align switch
+        {
+            "right" => bounds.Right - scaledWidth,
+            "center" => bounds.Left + ((bounds.Width - scaledWidth) / 2f),
+            _ => bounds.Left
+        };
+
+        var state = graphics.Save();
+        try
+        {
+            graphics.SetClip(bounds);
+            graphics.TranslateTransform(drawX, bounds.Top);
+            graphics.ScaleTransform(fitScale, 1f);
+            graphics.DrawString(string.IsNullOrEmpty(text) ? " " : text, font, brush, 0, 0, measureFormat);
+        }
+        finally
+        {
+            graphics.Restore(state);
+        }
+    }
+
+    private static float Clamp(float value, float min, float max) => Math.Min(Math.Max(value, min), max);
+
     private static Font CreateTextFont(int fontSize, bool bold, string? preferredFamily = null)
     {
         var emSize = Math.Max(1f, ConvertPointSizeToPixels(fontSize));
+        return CreateTextFontFromPixels(emSize, bold, preferredFamily);
+    }
+
+    private static Font CreateTextFontFromPixels(float emSize, bool bold, string? preferredFamily = null)
+    {
+        emSize = Math.Max(1f, emSize);
         var style = bold ? FontStyle.Bold : FontStyle.Regular;
         foreach (var familyName in EnumerateFontCandidates(preferredFamily))
         {
@@ -379,4 +448,6 @@ public sealed class TsplBuilder
     private static void WriteLine(BinaryWriter writer, string command) => writer.Write(Encoding.ASCII.GetBytes(command + "\r\n"));
 
     private sealed record BitmapPayload(int WidthBytes, int HeightDots, byte[] Payload);
+
+    private sealed record CodeElementLayout(RectangleF Code, RectangleF? Text, float FontSize);
 }

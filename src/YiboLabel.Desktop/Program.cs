@@ -23,8 +23,26 @@ internal sealed class MainForm : Form
 {
     private const string AppUrl = "http://127.0.0.1:5076";
     private const int ResizeBorderThickness = 8;
+    private const int WsThickframe = 0x00040000;
+    private const int WsMinimizebox = 0x00020000;
+    private const int WsMaximizebox = 0x00010000;
+    private const int WsSysmenu = 0x00080000;
+    private const int WmSyskeydown = 0x104;
+    private const int WmSyscommand = 0x112;
     private const int WmNchittest = 0x84;
     private const int WmNclbuttondown = 0xA1;
+    private const int MfBycommand = 0x0;
+    private const int MfGrayED = 0x1;
+    private const int MfEnabled = 0x0;
+    private const uint TpmLeftAlign = 0x0000;
+    private const uint TpmTopAlign = 0x0000;
+    private const uint TpmReturnCmd = 0x0100;
+    private const uint ScRestore = 0xF120;
+    private const uint ScMove = 0xF010;
+    private const uint ScSize = 0xF000;
+    private const uint ScMinimize = 0xF020;
+    private const uint ScMaximize = 0xF030;
+    private const uint ScClose = 0xF060;
     private const int HtClient = 1;
     private const int HtCaption = 2;
     private const int HtLeft = 10;
@@ -42,6 +60,20 @@ internal sealed class MainForm : Form
 
     private readonly WebView2 webView;
     private Process? backendProcess;
+    private bool closeConfirmed;
+    private bool closeRequestInFlight;
+    private bool isPseudoMaximized;
+    private Rectangle restoreBoundsBeforeMaximize;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var createParams = base.CreateParams;
+            createParams.Style |= WsThickframe | WsMinimizebox | WsMaximizebox | WsSysmenu;
+            return createParams;
+        }
+    }
 
     public MainForm()
     {
@@ -52,8 +84,9 @@ internal sealed class MainForm : Form
         MinimumSize = new Size(1200, 760);
         FormBorderStyle = FormBorderStyle.None;
         BackColor = Color.FromArgb(243, 247, 252);
+        SetStyle(ControlStyles.ResizeRedraw, true);
         ApplyWindowState();
-        MaximizedBounds = Screen.FromPoint(Location).WorkingArea;
+        ApplyDesktopWindowEffects();
 
         webView = new WebView2
         {
@@ -63,7 +96,11 @@ internal sealed class MainForm : Form
         Controls.Add(webView);
 
         Load += OnLoadAsync;
+        FormClosing += OnFormClosing;
         FormClosed += OnClosed;
+        SizeChanged += OnWindowBoundsChanged;
+        LocationChanged += OnWindowBoundsChanged;
+        webView.NavigationCompleted += OnNavigationCompleted;
     }
 
     private async void OnLoadAsync(object? sender, EventArgs eventArgs)
@@ -76,6 +113,7 @@ internal sealed class MainForm : Form
             await webView.EnsureCoreWebView2Async();
             webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
             webView.Source = new Uri(AppUrl);
+            SendWindowChromeState();
         }
         catch (Exception ex)
         {
@@ -99,6 +137,28 @@ internal sealed class MainForm : Form
         {
             // Ignore cleanup failures on close.
         }
+    }
+
+    private void OnFormClosing(object? sender, FormClosingEventArgs eventArgs)
+    {
+        if (closeConfirmed)
+        {
+            return;
+        }
+
+        if (webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        eventArgs.Cancel = true;
+        if (closeRequestInFlight)
+        {
+            return;
+        }
+
+        closeRequestInFlight = true;
+        SendWindowChromeMessage("request-close");
     }
 
     private static Process StartBackend()
@@ -195,9 +255,10 @@ internal sealed class MainForm : Form
 
         StartPosition = FormStartPosition.Manual;
         Bounds = bounds;
+        restoreBoundsBeforeMaximize = bounds;
         if (state.IsMaximized)
         {
-            WindowState = FormWindowState.Maximized;
+            ApplyPseudoMaximize();
         }
     }
 
@@ -205,14 +266,14 @@ internal sealed class MainForm : Form
     {
         try
         {
-            var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            var bounds = isPseudoMaximized ? restoreBoundsBeforeMaximize : Bounds;
             var state = new WindowStateSnapshot
             {
                 Left = bounds.Left,
                 Top = bounds.Top,
                 Width = bounds.Width,
                 Height = bounds.Height,
-                IsMaximized = WindowState == FormWindowState.Maximized
+                IsMaximized = isPseudoMaximized
             };
 
             var directory = Path.GetDirectoryName(WindowStateFilePath);
@@ -292,16 +353,31 @@ internal sealed class MainForm : Form
             switch (command)
             {
                 case "drag":
-                    BeginWindowDrag();
+                    BeginWindowDrag(payload.RootElement);
+                    break;
+                case "sync-state":
+                    SendWindowChromeState();
+                    break;
+                case "system-menu":
+                    ShowSystemMenu(payload.RootElement);
                     break;
                 case "toggle-maximize":
-                    WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
+                    TogglePseudoMaximize();
                     break;
                 case "minimize":
                     WindowState = FormWindowState.Minimized;
                     break;
                 case "close":
-                    Close();
+                    closeRequestInFlight = true;
+                    SendWindowChromeMessage("request-close");
+                    break;
+                case "force-close":
+                    closeConfirmed = true;
+                    closeRequestInFlight = false;
+                    BeginInvoke(Close);
+                    break;
+                case "cancel-close":
+                    closeRequestInFlight = false;
                     break;
             }
         }
@@ -504,14 +580,78 @@ internal sealed class MainForm : Form
         webView.CoreWebView2.PostWebMessageAsJson(json);
     }
 
-    private void BeginWindowDrag()
+    private void SendWindowChromeMessage(string command)
     {
+        if (webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "window-chrome",
+            command
+        });
+        webView.CoreWebView2.PostWebMessageAsJson(json);
+    }
+
+    private void SendWindowChromeState()
+    {
+        if (webView is null || webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "window-chrome",
+            command = "state-changed",
+            isMaximized = isPseudoMaximized
+        });
+        webView.CoreWebView2.PostWebMessageAsJson(json);
+    }
+
+    private void BeginWindowDrag(JsonElement payload)
+    {
+        if (WindowState == FormWindowState.Minimized)
+        {
+            WindowState = FormWindowState.Normal;
+        }
+
+        if (isPseudoMaximized)
+        {
+            var screenPoint = Cursor.Position;
+            var previousBounds = restoreBoundsBeforeMaximize;
+            if (previousBounds.Width > 0 && previousBounds.Height > 0)
+            {
+                var maximizedBounds = Bounds;
+                var workingArea = Screen.FromPoint(screenPoint).WorkingArea;
+                var horizontalRatio = maximizedBounds.Width <= 0
+                    ? 0.5d
+                    : Math.Clamp((screenPoint.X - maximizedBounds.Left) / (double)maximizedBounds.Width, 0.0d, 1.0d);
+                var nextLeft = (int)Math.Round(screenPoint.X - (previousBounds.Width * horizontalRatio));
+                var nextTop = Math.Max(workingArea.Top, screenPoint.Y - 18);
+                nextLeft = Math.Clamp(nextLeft, workingArea.Left, Math.Max(workingArea.Left, workingArea.Right - previousBounds.Width));
+                nextTop = Math.Clamp(nextTop, workingArea.Top, Math.Max(workingArea.Top, workingArea.Bottom - previousBounds.Height));
+
+                isPseudoMaximized = false;
+                Bounds = new Rectangle(nextLeft, nextTop, previousBounds.Width, previousBounds.Height);
+                SendWindowChromeState();
+            }
+        }
+
         ReleaseCapture();
         SendMessage(Handle, WmNclbuttondown, HtCaption, 0);
     }
 
     protected override void WndProc(ref Message message)
     {
+        if (message.Msg == WmSyskeydown && message.WParam == (IntPtr)Keys.Space)
+        {
+            ShowSystemMenuAt(Left + 20, Top + 44);
+            return;
+        }
+
         if (message.Msg == WmNchittest)
         {
             base.WndProc(ref message);
@@ -533,7 +673,7 @@ internal sealed class MainForm : Form
 
     private int GetChromeHitTest(Point point)
     {
-        if (WindowState == FormWindowState.Normal)
+        if (!isPseudoMaximized && WindowState == FormWindowState.Normal)
         {
             var left = point.X <= ResizeBorderThickness;
             var right = point.X >= Width - ResizeBorderThickness;
@@ -584,11 +724,172 @@ internal sealed class MainForm : Form
         return HtClient;
     }
 
+    private void TogglePseudoMaximize()
+    {
+        if (WindowState == FormWindowState.Minimized)
+        {
+            WindowState = FormWindowState.Normal;
+        }
+
+        if (isPseudoMaximized)
+        {
+            isPseudoMaximized = false;
+            Bounds = restoreBoundsBeforeMaximize;
+            SendWindowChromeState();
+            return;
+        }
+
+        restoreBoundsBeforeMaximize = Bounds;
+        ApplyPseudoMaximize();
+    }
+
+    private void ApplyPseudoMaximize()
+    {
+        StartPosition = FormStartPosition.Manual;
+        isPseudoMaximized = true;
+        Bounds = Screen.FromHandle(Handle).WorkingArea;
+        SendWindowChromeState();
+    }
+
+    private void ShowSystemMenu(JsonElement payload)
+    {
+        var point = Cursor.Position;
+        if (point == Point.Empty && !TryGetScreenPoint(payload, out point))
+        {
+            point = new Point(Left + 20, Top + 44);
+        }
+
+        ShowSystemMenuAt(point.X, point.Y);
+    }
+
+    private void ShowSystemMenuAt(int screenX, int screenY)
+    {
+        var menuHandle = GetSystemMenu(Handle, false);
+        if (menuHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        ConfigureSystemMenu(menuHandle);
+        var selectedCommand = TrackPopupMenuEx(
+            menuHandle,
+            TpmLeftAlign | TpmTopAlign | TpmReturnCmd,
+            screenX,
+            screenY,
+            Handle,
+            IntPtr.Zero);
+
+        if (selectedCommand != 0)
+        {
+            PostMessage(Handle, WmSyscommand, (IntPtr)selectedCommand, IntPtr.Zero);
+        }
+    }
+
+    private void ConfigureSystemMenu(IntPtr menuHandle)
+    {
+        var canRestore = isPseudoMaximized || WindowState == FormWindowState.Minimized;
+        var canMoveOrSize = !isPseudoMaximized && WindowState == FormWindowState.Normal;
+        var canMinimize = WindowState != FormWindowState.Minimized;
+        var canMaximize = !isPseudoMaximized && WindowState != FormWindowState.Minimized;
+
+        EnableMenuItem(menuHandle, ScRestore, MfBycommand | (canRestore ? MfEnabled : MfGrayED));
+        EnableMenuItem(menuHandle, ScMove, MfBycommand | (canMoveOrSize ? MfEnabled : MfGrayED));
+        EnableMenuItem(menuHandle, ScSize, MfBycommand | (canMoveOrSize ? MfEnabled : MfGrayED));
+        EnableMenuItem(menuHandle, ScMinimize, MfBycommand | (canMinimize ? MfEnabled : MfGrayED));
+        EnableMenuItem(menuHandle, ScMaximize, MfBycommand | (canMaximize ? MfEnabled : MfGrayED));
+        EnableMenuItem(menuHandle, ScClose, MfBycommand | MfEnabled);
+    }
+
+    private void ApplyDesktopWindowEffects()
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            return;
+        }
+
+        const int DwmWindowCornerPreferenceAttribute = 33;
+        const int DwmWindowCornerPreferenceRound = 2;
+        var cornerPreference = DwmWindowCornerPreferenceRound;
+        DwmSetWindowAttribute(Handle, DwmWindowCornerPreferenceAttribute, ref cornerPreference, sizeof(int));
+
+        var margins = new Margins
+        {
+            Left = 1,
+            Right = 1,
+            Top = 1,
+            Bottom = 1
+        };
+        DwmExtendFrameIntoClientArea(Handle, ref margins);
+    }
+
+    private void OnWindowBoundsChanged(object? sender, EventArgs eventArgs)
+    {
+        if (!isPseudoMaximized)
+        {
+            restoreBoundsBeforeMaximize = Bounds;
+        }
+
+        SendWindowChromeState();
+    }
+
+    private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs eventArgs)
+    {
+        if (!eventArgs.IsSuccess)
+        {
+            return;
+        }
+
+        SendWindowChromeState();
+    }
+
+    private static bool TryGetScreenPoint(JsonElement payload, out Point point)
+    {
+        point = default;
+        if (!payload.TryGetProperty("screenX", out var screenXElement) || !payload.TryGetProperty("screenY", out var screenYElement))
+        {
+            return false;
+        }
+
+        if (!screenXElement.TryGetInt32(out var screenX) || !screenYElement.TryGetInt32(out var screenY))
+        {
+            return false;
+        }
+
+        point = new Point(screenX, screenY);
+        return true;
+    }
+
     [DllImport("user32.dll")]
     private static extern bool ReleaseCapture();
 
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert);
+
+    [DllImport("user32.dll")]
+    private static extern int EnableMenuItem(IntPtr hMenu, uint uIDEnableItem, int uEnable);
+
+    [DllImport("user32.dll")]
+    private static extern int TrackPopupMenuEx(IntPtr hmenu, uint fuFlags, int x, int y, IntPtr hwnd, IntPtr lptpm);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int pvAttribute, int cbAttribute);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins pMarInset);
+
+    private struct Margins
+    {
+        public int Left;
+        public int Right;
+        public int Top;
+        public int Bottom;
+    }
 
     private sealed class WindowStateSnapshot
     {

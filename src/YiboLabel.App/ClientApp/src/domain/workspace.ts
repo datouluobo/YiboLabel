@@ -2,7 +2,7 @@ import type { LabelDocument } from '../types'
 import { createId, normalizeDocument } from './labelDocument'
 
 export const historyLimit = 40
-export const workspaceStorageKey = 'yibolabel.workspace.v7'
+export const workspaceStorageKey = 'yibolabel.workspace.v8'
 
 export type HistoryState = {
   past: LabelDocument[]
@@ -12,25 +12,36 @@ export type HistoryState = {
 export type EditorTab = {
   id: string
   templateId: string | null
+  origin: EditorTabOrigin
   document: LabelDocument
   selectedElementIds: string[]
   history: HistoryState
   lastSavedSnapshot: string
 }
 
+export type EditorTabOrigin = 'blank' | 'imported' | 'template' | 'detached'
+
 export type ClosedTabSnapshot = {
   templateId: string | null
+  origin: EditorTabOrigin
   document: LabelDocument
   selectedElementIds: string[]
   lastSavedSnapshot: string
 }
 
 export type WorkspaceSnapshot = {
-  version: 7
+  version: 9
   activeTabId: string | null
+  ui?: {
+    activeSurface: 'editor' | 'templates' | 'lexicons'
+    lastEditorTabId: string | null
+    showDocumentDialog: boolean
+    layersCollapsed: boolean
+  }
   tabs: Array<{
     id: string
     templateId: string | null
+    origin?: EditorTabOrigin
     document: LabelDocument
     selectedElementIds: string[]
     history: HistoryState
@@ -44,6 +55,7 @@ export function createEditorTab(
   options?: {
     id?: string
     templateId?: string | null
+    origin?: EditorTabOrigin
     selectedElementIds?: string[]
   },
 ): EditorTab {
@@ -51,6 +63,7 @@ export function createEditorTab(
   return {
     id: options?.id ?? createId(),
     templateId: options?.templateId ?? null,
+    origin: options?.origin ?? inferTabOrigin(options?.templateId ?? null),
     document: normalized,
     selectedElementIds: options?.selectedElementIds ?? [normalized.elements[0]?.id].filter(Boolean) as string[],
     history: { past: [], future: [] },
@@ -76,6 +89,7 @@ export function normalizeEditorTab(
   return {
     id: tab.id || createId(),
     templateId: tab.templateId ?? null,
+    origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
     document: normalizedDocument,
     selectedElementIds: validSelection,
     history: normalizeHistory(tab.history),
@@ -94,12 +108,54 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
       return null
     }
 
-    const parsed = JSON.parse(raw) as WorkspaceSnapshot
-    if (parsed?.version !== 7 || !Array.isArray(parsed.tabs)) {
+    const parsed = JSON.parse(raw) as
+      | WorkspaceSnapshot
+      | (Omit<WorkspaceSnapshot, 'version'> & { version: 8 })
+      | (Omit<WorkspaceSnapshot, 'version'> & { version: 7 })
+    if (!parsed || !Array.isArray(parsed.tabs)) {
       return null
     }
 
-    return parsed
+    if (parsed.version === 9) {
+      return {
+        ...parsed,
+        tabs: parsed.tabs.map((tab) => ({
+          ...tab,
+          origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
+        })),
+      }
+    }
+
+    if (parsed.version === 8) {
+      return {
+        version: 9,
+        activeTabId: parsed.activeTabId ?? null,
+        tabs: parsed.tabs.map((tab) => ({
+          ...tab,
+          origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
+        })),
+        ui: parsed.ui,
+      }
+    }
+
+    if (parsed.version === 7) {
+      return {
+        version: 9,
+        activeTabId: parsed.activeTabId ?? null,
+        tabs: parsed.tabs.map((tab) => ({
+          ...tab,
+          origin: inferTabOrigin(tab.templateId ?? null),
+        })),
+        ui: {
+          activeSurface: 'editor',
+          lastEditorTabId: parsed.activeTabId ?? null,
+          showDocumentDialog: false,
+          layersCollapsed: false,
+        },
+      }
+    }
+
+    return null
   } catch {
     return null
   }
@@ -109,9 +165,33 @@ export function getTabDisplayName(tab: Pick<EditorTab, 'document'>) {
   return tab.document.name?.trim() || '未命名标签'
 }
 
+export function getTabKindLabel(tab: Pick<EditorTab, 'origin' | 'templateId'>) {
+  if (tab.origin === 'blank') {
+    return '空白草稿'
+  }
+  if (tab.origin === 'imported') {
+    return '导入草稿'
+  }
+  if (tab.origin === 'detached') {
+    return '已解绑草稿'
+  }
+  return tab.templateId ? '模板草稿' : '未绑定草稿'
+}
+
+export function getTabStatusLabel(
+  tab: Pick<EditorTab, 'document' | 'lastSavedSnapshot'>,
+  serializeTabSnapshot: (tab: Pick<EditorTab, 'document'>) => string,
+) {
+  return isTabDirty(tab, serializeTabSnapshot) ? '未保存修改' : '已保存'
+}
+
 export function isTabDirty(
   tab: Pick<EditorTab, 'document' | 'lastSavedSnapshot'>,
   serializeTabSnapshot: (tab: Pick<EditorTab, 'document'>) => string,
 ) {
   return serializeTabSnapshot(tab) !== tab.lastSavedSnapshot
+}
+
+function inferTabOrigin(templateId: string | null): EditorTabOrigin {
+  return templateId ? 'template' : 'blank'
 }

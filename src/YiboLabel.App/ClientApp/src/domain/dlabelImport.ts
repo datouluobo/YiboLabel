@@ -219,7 +219,7 @@ function parseDlabelObject(
       rotation,
       zIndex: index,
       text: textNode?.getAttribute('value') ?? '',
-      fontSize: dependencies.clamp(Math.round(readDlabelNumber(node, 'fontsize', 18)), 8, 96),
+      fontSize: dependencies.clamp(Math.round(readDlabelNumber(node, 'fontsize', 18)), 4, 96),
       fontFamily: dependencies.defaultFontFamily,
       bold: (node.getAttribute('fontbold') ?? '').toLowerCase() === 'true',
       align: mapDlabelTextAlign(node.getAttribute('alignment')),

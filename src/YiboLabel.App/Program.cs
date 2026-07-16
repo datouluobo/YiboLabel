@@ -274,19 +274,17 @@ app.Run();
 
 static string? ResolveWebRoot()
 {
-    var localWebRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-    if (Directory.Exists(localWebRoot))
+    var candidates = new[]
     {
-        return localWebRoot;
-    }
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "wwwroot")),
+        Path.Combine(AppContext.BaseDirectory, "wwwroot"),
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "YiboLabel.App", "wwwroot")),
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "YiboLabel.App", "wwwroot")),
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "YiboLabel.App", "bin", "Debug", "net10.0-windows", "wwwroot")),
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "YiboLabel.App", "bin", "Debug", "net10.0-windows", "wwwroot"))
+    };
 
-    var repoBuildWebRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "src", "YiboLabel.App", "bin", "Debug", "net10.0-windows", "wwwroot"));
-    if (Directory.Exists(repoBuildWebRoot))
-    {
-        return repoBuildWebRoot;
-    }
-
-    return null;
+    return candidates.FirstOrDefault(Directory.Exists);
 }
 
 static string? ValidateTemplateRequest(SaveTemplateRequest request)

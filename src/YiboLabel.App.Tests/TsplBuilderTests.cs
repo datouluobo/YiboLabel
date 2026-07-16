@@ -111,6 +111,46 @@ public sealed class TsplBuilderTests
         Assert.NotEqual(basePayload, shiftedPayload);
     }
 
+    [Fact]
+    public void Build_RotatedDocument_SwapsSizeToMatchBitmapSurface()
+    {
+        var builder = new TsplBuilder();
+        var document = new LabelDocument
+        {
+            Name = "Rotated Label",
+            WidthMm = 70,
+            HeightMm = 50,
+            Copies = 1,
+            Darkness = 8,
+            GapMm = 2,
+            PrintRotation = 90,
+            PrintInvert = false,
+            PrintOffsetXMm = 0,
+            PrintOffsetYMm = 0,
+            Elements =
+            [
+                new TextElement
+                {
+                    Id = "title",
+                    X = 2,
+                    Y = 2,
+                    Width = 30,
+                    Height = 6,
+                    Text = "Rotation",
+                    FontSize = 12,
+                    FontFamily = "Microsoft YaHei",
+                    Align = "left"
+                }
+            ]
+        };
+
+        var payload = builder.Build(document);
+        var ascii = Encoding.ASCII.GetString(payload);
+
+        Assert.Contains("SIZE 50 mm,70 mm", ascii);
+        Assert.Contains("BITMAP 0,0,", ascii);
+    }
+
     private static int FindSequence(byte[] haystack, byte[] needle, int startIndex = 0)
     {
         for (var index = startIndex; index <= haystack.Length - needle.Length; index++)

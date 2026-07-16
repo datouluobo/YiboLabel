@@ -42,10 +42,13 @@ import { ElementInspector, MultiSelectionInspector } from './components/ElementI
 import { ExportDialog, type ExportDialogOptions } from './components/ExportDialog'
 import { GroupBindingPanel } from './components/GroupBindingPanel'
 import { LexiconManager } from './components/LexiconManager'
+import { PendingSavesDialog } from './components/PendingSavesDialog'
 import { TemplateLibraryView } from './components/TemplateLibraryView'
+import { UnsavedChangesDialog } from './components/UnsavedChangesDialog'
 import { WorkspaceTopbar } from './components/WorkspaceTopbar'
 import {
   createEditorTab,
+  getTabKindLabel,
   isTabDirty,
   normalizeEditorTab,
   recentClosedTabLimit,
@@ -111,6 +114,7 @@ import {
   writeBase64ExportFile,
   writeTextExportFile,
 } from './platform/exportBridge'
+import { sendWindowChromeCommand, subscribeWindowChromeMessages } from './platform/windowChrome'
 import type {
   AppStateResponse,
   DuplicateTemplateRequest,
@@ -172,6 +176,14 @@ type MarqueeInteraction = {
 
 type EditorInteraction = MoveInteraction | ResizeInteraction | RotateInteraction | MarqueeInteraction
 
+type UnsavedDialogState = {
+  mode: 'close-tab' | 'exit-review'
+  tabId: string
+  title: string
+  body: string
+  saveLabel: string
+}
+
 export default function App() {
   const [appState, setAppState] = useState<AppStateResponse | null>(null)
   const [templates, setTemplates] = useState<LabelTemplateSummary[]>([])
@@ -201,6 +213,11 @@ export default function App() {
   const [exporting, setExporting] = useState(false)
   const [exportOptions, setExportOptions] = useState<ExportDialogOptions>({ format: 'pdf', pdfPaperMode: 'label' })
   const [layersCollapsed, setLayersCollapsed] = useState(false)
+  const [unsavedDialog, setUnsavedDialog] = useState<UnsavedDialogState | null>(null)
+  const [pendingSavesOpen, setPendingSavesOpen] = useState(false)
+  const [exitReviewQueue, setExitReviewQueue] = useState<string[]>([])
+  const [hostCloseRequestPending, setHostCloseRequestPending] = useState(false)
+  const [windowIsMaximized, setWindowIsMaximized] = useState(false)
   const [, setActivity] = useState<string[]>([])
   const [interaction, setInteraction] = useState<EditorInteraction | null>(null)
   const [snapLines, setSnapLines] = useState<SnapLine[]>([])
@@ -211,6 +228,7 @@ export default function App() {
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const canvasWrapRef = useRef<HTMLDivElement | null>(null)
   const tabsRef = useRef<EditorTab[]>([])
+  const allowImmediateCloseRef = useRef(false)
   const fallbackDocument = useMemo(() => createBlankDocument(), [])
   const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? null, [activeTabId, tabs])
   const hasActiveTab = activeTab !== null
@@ -218,6 +236,7 @@ export default function App() {
   const activeDocumentName = activeTab?.document.name?.trim() || '未命名标签'
   const selectedElementIds = activeTab?.selectedElementIds ?? emptySelectionIds
   const history = activeTab?.history ?? emptyHistoryState
+  const activeTabOrigin = activeTab?.origin ?? null
   const activeTemplateId = activeTab?.templateId ?? null
   const documentRef = useRef(labelDocument)
   const historyRef = useRef(history)
@@ -237,6 +256,10 @@ export default function App() {
   useEffect(() => {
     const hasDirtyTabs = tabs.some((tab) => isTabDirty(tab))
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (allowImmediateCloseRef.current) {
+        return
+      }
+
       if (!hasDirtyTabs) {
         return
       }
@@ -256,11 +279,18 @@ export default function App() {
     }
 
     const snapshot: WorkspaceSnapshot = {
-      version: 7,
+      version: 9,
       activeTabId,
+      ui: {
+        activeSurface,
+        lastEditorTabId,
+        showDocumentDialog: showDocumentDialog && hasActiveTab,
+        layersCollapsed,
+      },
       tabs: tabs.map((tab) => ({
         id: tab.id,
         templateId: tab.templateId,
+        origin: tab.origin,
         document: tab.document,
         selectedElementIds: tab.selectedElementIds,
         history: tab.history,
@@ -269,7 +299,7 @@ export default function App() {
     }
 
     window.localStorage.setItem(workspaceStorageKey, JSON.stringify(snapshot))
-  }, [activeTabId, tabs])
+  }, [activeSurface, activeTabId, hasActiveTab, lastEditorTabId, layersCollapsed, showDocumentDialog, tabs])
 
   const sortedElements = useMemo(() => (hasActiveTab ? sortElements(labelDocument.elements) : []), [hasActiveTab, labelDocument.elements])
   const visibleElements = useMemo(() => sortedElements.filter((element) => !element.hidden), [sortedElements])
@@ -365,11 +395,18 @@ export default function App() {
     const groupIds = new Set(selectedElement.lexiconGroupIds ?? [])
     return lexiconGroups.filter((group) => groupIds.has(group.id))
   }, [lexiconGroups, selectedElement])
-  const currentSnapshot = useMemo(
-    () => (activeTab ? serializeTabSnapshot(activeTab) : ''),
-    [activeTab],
-  )
   const activeTabDirty = activeTab ? isTabDirty(activeTab) : false
+  const dirtyTabs = useMemo(() => tabs.filter((tab) => isTabDirty(tab)), [tabs])
+  const pendingSaveItems = useMemo(
+    () =>
+      dirtyTabs.map((tab) => ({
+        tabId: tab.id,
+        name: getTabDisplayName(tab),
+        kindLabel: getTabKindLabel(tab),
+        dirty: true,
+      })),
+    [dirtyTabs],
+  )
   const canvasScale = baseCanvasScale * canvasViewportScale * canvasUserZoom
 
   useEffect(() => {
@@ -386,6 +423,22 @@ export default function App() {
     window.addEventListener('wheel', handleWheel, { passive: false, capture: true })
     return () => window.removeEventListener('wheel', handleWheel, { capture: true })
   }, [])
+
+  useEffect(
+    () => {
+      sendWindowChromeCommand('sync-state')
+      return subscribeWindowChromeMessages((message) => {
+        if (message.command === 'state-changed') {
+          setWindowIsMaximized(message.isMaximized)
+          return
+        }
+
+        setHostCloseRequestPending(true)
+        requestAppClose('host')
+      })
+    },
+    [dirtyTabs.length],
+  )
 
   const updateActiveTab = useCallback((mutator: (tab: EditorTab) => EditorTab) => {
     if (!activeTabId) {
@@ -526,23 +579,62 @@ export default function App() {
     setSnapLines([])
   }
 
-  function closeTab(tabId: string) {
-    const closingTab = tabs.find((tab) => tab.id === tabId)
-    if (!closingTab) {
-      return
+  function getTabById(tabId: string) {
+    return tabsRef.current.find((tab) => tab.id === tabId) ?? null
+  }
+
+  function buildUnsavedDialogState(tab: EditorTab, mode: UnsavedDialogState['mode']): UnsavedDialogState {
+    const name = getTabDisplayName(tab)
+    if (tab.origin === 'template' && tab.templateId) {
+      return {
+        mode,
+        tabId: tab.id,
+        title: `“${name}”有未保存修改`,
+        body: '关闭前是否保存到原模板？',
+        saveLabel: '保存',
+      }
     }
 
-    if (isTabDirty(closingTab)) {
-      const confirmed = window.confirm(`“${getTabDisplayName(closingTab)}”有未保存修改，确认关闭？`)
-      if (!confirmed) {
-        return
+    if (tab.origin === 'imported') {
+      return {
+        mode,
+        tabId: tab.id,
+        title: `“${name}”有未保存修改`,
+        body: '它还不是模板。关闭前是否另存为模板？',
+        saveLabel: '另存为模板',
       }
+    }
+
+    if (tab.origin === 'detached') {
+      return {
+        mode,
+        tabId: tab.id,
+        title: `“${name}”有未保存修改`,
+        body: '对应模板已删除。关闭前是否另存为新模板？',
+        saveLabel: '另存为模板',
+      }
+    }
+
+    return {
+      mode,
+      tabId: tab.id,
+      title: `“${name}”有未保存修改`,
+      body: '关闭前是否另存为模板？',
+      saveLabel: '另存为模板',
+    }
+  }
+
+  function closeTabImmediate(tabId: string) {
+    const closingTab = getTabById(tabId)
+    if (!closingTab) {
+      return
     }
 
     setRecentClosedTabs((current) =>
       [
         {
           templateId: closingTab.templateId,
+          origin: closingTab.origin,
           document: normalizeDocument(closingTab.document),
           selectedElementIds: closingTab.selectedElementIds,
           lastSavedSnapshot: closingTab.lastSavedSnapshot,
@@ -558,7 +650,7 @@ export default function App() {
       if (tabId === activeTabId) {
         if (remaining.length === 0) {
           setActiveTabId(null)
-          setStatus('工作区已清空。可新建标签、导入 DDL，或从模板库重新打开。')
+          setStatus('工作区已清空。可新建草稿、导入为草稿，或从模板库重新打开模板。')
         } else {
           const fallbackTab = remaining[Math.max(0, currentIndex - 1)] ?? remaining[0]
           setActiveTabId(fallbackTab?.id ?? null)
@@ -571,6 +663,20 @@ export default function App() {
     setSnapLines([])
   }
 
+  function closeTab(tabId: string) {
+    const closingTab = tabs.find((tab) => tab.id === tabId)
+    if (!closingTab) {
+      return
+    }
+
+    if (isTabDirty(closingTab)) {
+      setUnsavedDialog(buildUnsavedDialogState(closingTab, 'close-tab'))
+      return
+    }
+
+    closeTabImmediate(tabId)
+  }
+
   function reopenLastClosedTab() {
     const [nextClosedTab, ...remaining] = recentClosedTabs
     if (!nextClosedTab) {
@@ -579,6 +685,7 @@ export default function App() {
 
     const reopenedTab = createEditorTab(nextClosedTab.document, {
       templateId: nextClosedTab.templateId,
+      origin: nextClosedTab.origin,
       selectedElementIds: nextClosedTab.selectedElementIds,
     })
 
@@ -876,8 +983,13 @@ export default function App() {
       const restoredTabs = savedWorkspace?.tabs.map((tab) => normalizeEditorTab(tab)) ?? []
 
       if (restoredTabs.length > 0) {
+        const restoredSurface = savedWorkspace?.ui?.activeSurface ?? 'editor'
         setTabs(restoredTabs)
         setActiveTabId(savedWorkspace?.activeTabId && restoredTabs.some((tab) => tab.id === savedWorkspace.activeTabId) ? savedWorkspace.activeTabId : restoredTabs[0].id)
+        setLastEditorTabId(savedWorkspace?.ui?.lastEditorTabId ?? savedWorkspace?.activeTabId ?? restoredTabs[0].id)
+        setActiveSurface(restoredSurface)
+        setShowDocumentDialog(Boolean(savedWorkspace?.ui?.showDocumentDialog))
+        setLayersCollapsed(Boolean(savedWorkspace?.ui?.layersCollapsed))
         setStatus(`已恢复上次工作区，共 ${restoredTabs.length} 个标签页。`)
         return
       }
@@ -890,7 +1002,7 @@ export default function App() {
         return
       }
 
-      const next = createEditorTab(createBlankDocument())
+      const next = createEditorTab(createBlankDocument(), { origin: 'blank' })
       setTabs([next])
       setActiveTabId(next.id)
       setStatus('已就绪，可以开始设计你的第一张标签。')
@@ -1067,6 +1179,7 @@ export default function App() {
           return {
             ...tab,
             templateId: saved.id,
+            origin: 'template',
             document: normalized,
             lastSavedSnapshot: savedSnapshot,
           }
@@ -1075,6 +1188,7 @@ export default function App() {
         return {
           ...tab,
           templateId: saved.id,
+          origin: 'template',
           lastSavedSnapshot: savedSnapshot,
         }
       }),
@@ -1094,75 +1208,212 @@ export default function App() {
     openTab(
       createEditorTab(normalized, {
         templateId: template.id,
+        origin: 'template',
       }),
     )
     setStatus(`已加载模板：${template.name}`)
   }
 
   async function saveCurrentTemplate() {
-    if (!activeTab) {
+    if (!activeTabId) {
       return
     }
 
-    if (!activeTemplateId) {
-      await saveAsTemplate()
+    await saveTab(activeTabId)
+  }
+
+  async function persistCurrentDocument(options?: { silent?: boolean }) {
+    if (!activeTabId) {
       return
     }
 
-    const savingTabId = activeTab.id
-    const snapshotAtSaveStart = currentSnapshot
-    setSaving(true)
-    try {
-      const saved = await updateTemplate(activeTemplateId, {
-        name: labelDocument.name,
-        document: labelDocument,
-      })
-
-      applySavedTemplateToTabs(saved, savingTabId, snapshotAtSaveStart)
-      upsertTemplateSummary(saved)
-      setStatus(`已保存模板：${saved.name}`)
-      queueActivity(`已保存模板：${saved.name}`)
-      await refreshTemplateLibrary()
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    } finally {
-      setSaving(false)
-    }
+    await saveTab(activeTabId, { silent: options?.silent })
   }
 
   async function saveAsTemplate() {
-    if (!activeTab) {
+    if (!activeTabId) {
       return
     }
 
-    const suggestedName = labelDocument.name?.trim() || '未命名标签'
+    await saveTab(activeTabId, { forceSaveAs: true })
+  }
+
+  async function saveTab(tabId: string, options?: { forceSaveAs?: boolean; silent?: boolean }) {
+    const tab = getTabById(tabId)
+    if (!tab) {
+      return false
+    }
+
+    if (!options?.forceSaveAs && tab.templateId) {
+      setSaving(true)
+      try {
+        const saved = await updateTemplate(tab.templateId, {
+          name: tab.document.name,
+          document: tab.document,
+        })
+
+        applySavedTemplateToTabs(saved, tab.id, serializeTabSnapshot(tab))
+        upsertTemplateSummary(saved)
+        if (!options?.silent) {
+          setStatus(`已保存模板：${saved.name}`)
+          queueActivity(`已保存模板：${saved.name}`)
+        }
+        await refreshTemplateLibrary()
+        return true
+      } catch (error) {
+        if (!options?.silent) {
+          setStatus(getErrorMessage(error))
+        }
+        return false
+      } finally {
+        setSaving(false)
+      }
+    }
+
+    const suggestedName = tab.document.name?.trim() || '未命名标签'
     const targetName = window.prompt('另存为模板名称', suggestedName)?.trim()
     if (!targetName) {
-      return
+      return false
     }
 
-    const savingTabId = activeTab.id
-    const snapshotAtSaveStart = currentSnapshot
     setSaving(true)
     try {
       const saved = await createTemplate({
         name: targetName,
         document: {
-          ...labelDocument,
+          ...tab.document,
           name: targetName,
         },
       })
 
-      applySavedTemplateToTabs(saved, savingTabId, snapshotAtSaveStart)
+      applySavedTemplateToTabs(saved, tab.id, serializeTabSnapshot(tab))
       upsertTemplateSummary(saved)
-      setStatus(`已另存为模板：${saved.name}`)
-      queueActivity(`已另存为模板：${saved.name}`)
+      if (!options?.silent) {
+        setStatus(`已另存为模板：${saved.name}`)
+        queueActivity(`已另存为模板：${saved.name}`)
+      }
       await refreshTemplateLibrary()
+      return true
     } catch (error) {
-      setStatus(getErrorMessage(error))
+      if (!options?.silent) {
+        setStatus(getErrorMessage(error))
+      }
+      return false
     } finally {
       setSaving(false)
     }
+  }
+
+  function requestAppClose(source: 'app' | 'host' = 'app') {
+    allowImmediateCloseRef.current = false
+
+    if (dirtyTabs.length === 0) {
+      completeAppClose()
+      return
+    }
+
+    if (source === 'app') {
+      setHostCloseRequestPending(false)
+    }
+    setPendingSavesOpen(true)
+  }
+
+  function startExitReview(tabIds: string[]) {
+    if (tabIds.length === 0) {
+      completeAppClose()
+      return
+    }
+
+    const [currentTabId, ...remaining] = tabIds
+    const currentTab = getTabById(currentTabId)
+    if (!currentTab) {
+      startExitReview(remaining)
+      return
+    }
+
+    setExitReviewQueue(remaining)
+    setPendingSavesOpen(false)
+    setUnsavedDialog(buildUnsavedDialogState(currentTab, 'exit-review'))
+  }
+
+  async function handleSaveAllBeforeExit() {
+    for (const tab of dirtyTabs) {
+      const saved = await saveTab(tab.id)
+      if (!saved) {
+        setPendingSavesOpen(false)
+        abortPendingHostClose()
+        return
+      }
+    }
+
+    setPendingSavesOpen(false)
+    completeAppClose()
+  }
+
+  function continueExitReview() {
+    startExitReview(exitReviewQueue)
+  }
+
+  async function handleUnsavedDialogSave() {
+    if (!unsavedDialog) {
+      return
+    }
+
+    const saved = await saveTab(unsavedDialog.tabId)
+    if (!saved) {
+      if (unsavedDialog.mode === 'exit-review') {
+        setExitReviewQueue([])
+        setUnsavedDialog(null)
+        abortPendingHostClose()
+      }
+      return
+    }
+
+    if (unsavedDialog.mode === 'close-tab') {
+      closeTabImmediate(unsavedDialog.tabId)
+      setUnsavedDialog(null)
+      return
+    }
+
+    setUnsavedDialog(null)
+    continueExitReview()
+  }
+
+  function handleUnsavedDialogDiscard() {
+    if (!unsavedDialog) {
+      return
+    }
+
+    if (unsavedDialog.mode === 'close-tab') {
+      closeTabImmediate(unsavedDialog.tabId)
+      setUnsavedDialog(null)
+      return
+    }
+
+    setUnsavedDialog(null)
+    continueExitReview()
+  }
+
+  function handleUnsavedDialogCancel() {
+    setUnsavedDialog(null)
+    setExitReviewQueue([])
+    abortPendingHostClose()
+  }
+
+  function completeAppClose() {
+    allowImmediateCloseRef.current = true
+    setHostCloseRequestPending(false)
+    sendWindowChromeCommand('force-close')
+  }
+
+  function abortPendingHostClose() {
+    allowImmediateCloseRef.current = false
+    if (!hostCloseRequestPending) {
+      return
+    }
+
+    setHostCloseRequestPending(false)
+    sendWindowChromeCommand('cancel-close')
   }
 
   async function renameTemplate(template: LabelTemplateSummary) {
@@ -1236,6 +1487,7 @@ export default function App() {
             ? {
                 ...tab,
                 templateId: null,
+                origin: 'detached',
                 lastSavedSnapshot: serializeTabSnapshot({
                   document: tab.document,
                 }),
@@ -1267,6 +1519,7 @@ export default function App() {
         document: labelDocument,
         devicePathOverride: currentPrinter.devicePath,
       })
+      await persistCurrentDocument({ silent: true })
 
       setStatus(`打印已发送到设备：${response.devicePath}`)
       queueActivity(`已打印：${labelDocument.name}`)
@@ -1343,8 +1596,8 @@ export default function App() {
   function createFreshDocument() {
     const next = createBlankDocument('快速标签')
     next.printerDevicePath = labelDocument.printerDevicePath
-    openTab(createEditorTab(next, { templateId: null }))
-    setStatus('已新建标签。')
+    openTab(createEditorTab(next, { templateId: null, origin: 'blank' }))
+    setStatus('已新建空白草稿。')
   }
 
   function handleImageUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -1381,28 +1634,50 @@ export default function App() {
     }
 
     try {
-      const ddlSource = await file.text()
-      const imported = importDlabelTemplate(ddlSource, file.name, {
-        minDocumentSizeMm,
-        minElementSizeMm,
-        defaultFontFamily,
-        createBlankDocument,
-        createElement,
-        normalizeDocument,
-        normalizeRotation,
-        clamp,
-        createId,
-      })
-      openTab(createEditorTab(imported.document, { templateId: null }))
-      queueActivity(`已导入 DDL：${imported.document.name}`)
+      const source = await file.text()
+      const imported = importLabelDocument(source, file.name)
+      openTab(createEditorTab(imported.document, { templateId: null, origin: 'imported' }))
+      queueActivity(`已导入：${imported.document.name}`)
       setStatus(
         imported.warnings.length > 0
-          ? `已导入 DDL：${imported.document.name} · ${imported.warnings.join('；')}`
-          : `已导入 DDL：${imported.document.name}`,
+          ? `已导入：${imported.document.name} · ${imported.warnings.join('；')}`
+          : `已导入：${imported.document.name}`,
       )
     } catch (error) {
-      setStatus(`DDL 导入失败：${getErrorMessage(error)}`)
+      setStatus(`导入失败：${getErrorMessage(error)}`)
     }
+  }
+
+  function importLabelDocument(source: string, fileName: string) {
+    const trimmed = source.trimStart()
+    if (trimmed.startsWith('{')) {
+      const parsed = JSON.parse(source) as { document?: LabelDocument; name?: string; kind?: string }
+      const importedDocument = parsed.document ? normalizeDocument(parsed.document) : parseSerializedDocument(source)
+      if (!importedDocument) {
+        throw new Error('YiboLabel 导出文件结构无法解析。')
+      }
+
+      const baseName = parsed.name?.trim() || importedDocument.name?.trim() || fileName.replace(/\.[^.]+$/, '').trim() || '导入标签'
+      return {
+        document: normalizeDocument({
+          ...importedDocument,
+          name: baseName,
+        }),
+        warnings: parsed.kind === 'yibolabel-template-export' ? [] : ['已按 YiboLabel JSON 结构导入'],
+      }
+    }
+
+    return importDlabelTemplate(source, fileName, {
+      minDocumentSizeMm,
+      minElementSizeMm,
+      defaultFontFamily,
+      createBlankDocument,
+      createElement,
+      normalizeDocument,
+      normalizeRotation,
+      clamp,
+      createId,
+    })
   }
 
   function addNewElement(type: LabelElement['type']) {
@@ -1745,8 +2020,9 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={clsx('app-shell', windowIsMaximized && 'window-maximized')}>
       <WorkspaceTopbar
+        windowIsMaximized={windowIsMaximized}
         activeSurface={activeSurface}
         showDocumentDialog={showDocumentDialog}
         hasActiveTab={hasActiveTab}
@@ -1762,6 +2038,7 @@ export default function App() {
         saving={saving}
         printing={printing}
         exporting={exporting}
+        activeTabOrigin={activeTabOrigin}
         activeTemplateId={activeTemplateId}
         onToggleSurface={toggleSurface}
         onShowDocumentDialog={() => setShowDocumentDialog(true)}
@@ -1775,6 +2052,7 @@ export default function App() {
         onSaveAsTemplate={() => void saveAsTemplate()}
         onShowExportDialog={() => setShowExportDialog(true)}
         onPrintCurrent={printCurrent}
+        onRequestAppClose={requestAppClose}
       />
 
       <EditorTabStrip
@@ -1863,6 +2141,7 @@ export default function App() {
             <EditorCanvasPanel
               hasActiveTab={hasActiveTab}
               labelDocument={labelDocument}
+              activeTabOrigin={activeTabOrigin}
               activeTemplateId={activeTemplateId}
               activeTabDirty={activeTabDirty}
               selectedElementIds={selectedElementIds}
@@ -1953,12 +2232,11 @@ export default function App() {
         onRefresh={() => void refreshLexiconGroups()}
       />
 
-      <input ref={ddlInputRef} type="file" accept=".ddl,.xml,text/xml" hidden onChange={handleDdlUpload} />
+      <input ref={ddlInputRef} type="file" accept=".ddl,.xml,.json,.yblabel.json,text/xml,application/json" hidden onChange={handleDdlUpload} />
 
       <DocumentPrintDialog
         open={showDocumentDialog && hasActiveTab}
         labelDocument={labelDocument}
-        activeTemplateId={activeTemplateId}
         appState={appState}
         currentPrinter={currentPrinter}
         overlapSummary={visibleOverlapSummary}
@@ -1984,6 +2262,30 @@ export default function App() {
           }
         }}
         onExport={() => void exportCurrent()}
+      />
+
+      <UnsavedChangesDialog
+        open={unsavedDialog !== null}
+        title={unsavedDialog?.title ?? ''}
+        body={unsavedDialog?.body ?? ''}
+        saving={saving}
+        saveLabel={unsavedDialog?.saveLabel}
+        onSave={() => void handleUnsavedDialogSave()}
+        onDiscard={handleUnsavedDialogDiscard}
+        onCancel={handleUnsavedDialogCancel}
+      />
+
+      <PendingSavesDialog
+        open={pendingSavesOpen}
+        items={pendingSaveItems}
+        saving={saving}
+        onSaveAll={() => void handleSaveAllBeforeExit()}
+        onReviewOneByOne={() => startExitReview(dirtyTabs.map((tab) => tab.id))}
+        onDiscardAndExit={completeAppClose}
+        onCancel={() => {
+          setPendingSavesOpen(false)
+          abortPendingHostClose()
+        }}
       />
     </div>
   )

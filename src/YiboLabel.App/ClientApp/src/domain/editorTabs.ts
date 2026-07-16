@@ -1,8 +1,11 @@
 import {
   createEditorTab as createWorkspaceTab,
+  getTabKindLabel as resolveTabKindLabel,
+  getTabStatusLabel as resolveTabStatusLabel,
   isTabDirty as computeTabDirty,
   normalizeEditorTab as restoreWorkspaceTab,
   type EditorTab,
+  type EditorTabOrigin,
   type WorkspaceSnapshot,
 } from './workspace'
 import { normalizeDocument } from './labelDocument'
@@ -21,6 +24,7 @@ export function createEditorTab(
   options?: {
     id?: string
     templateId?: string | null
+    origin?: EditorTabOrigin
     selectedElementIds?: string[]
   },
 ) {
@@ -33,4 +37,12 @@ export function normalizeEditorTab(tab: WorkspaceSnapshot['tabs'][number]) {
 
 export function isTabDirty(tab: Pick<EditorTab, 'document' | 'lastSavedSnapshot'>) {
   return computeTabDirty(tab, serializeTabSnapshot)
+}
+
+export function getTabKindLabel(tab: Pick<EditorTab, 'origin' | 'templateId'>) {
+  return resolveTabKindLabel(tab)
+}
+
+export function getTabStatusLabel(tab: Pick<EditorTab, 'document' | 'lastSavedSnapshot'>) {
+  return resolveTabStatusLabel(tab, serializeTabSnapshot)
 }

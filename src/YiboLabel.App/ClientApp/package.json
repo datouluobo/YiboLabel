@@ -1,7 +1,7 @@
 {
   "name": "clientapp",
   "private": true,
-  "version": "0.7.20",
+  "version": "0.7.38",
   "type": "module",
   "scripts": {
     "dev": "vite",

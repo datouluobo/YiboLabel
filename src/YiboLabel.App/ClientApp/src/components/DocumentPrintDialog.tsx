@@ -6,7 +6,6 @@ import type { AppStateResponse, LabelDocument } from '../types'
 type DocumentPrintDialogProps = {
   open: boolean
   labelDocument: LabelDocument
-  activeTemplateId: string | null
   appState: AppStateResponse | null
   currentPrinter: AppStateResponse['printers'][number] | null
   overlapSummary: ElementOverlapSummary
@@ -24,7 +23,6 @@ type DocumentPrintDialogProps = {
 export function DocumentPrintDialog({
   open,
   labelDocument,
-  activeTemplateId,
   appState,
   currentPrinter,
   overlapSummary,
@@ -160,11 +158,11 @@ export function DocumentPrintDialog({
         <div className="modal-actions">
           <button className="ghost-button compact-button" onClick={onSaveCurrentTemplate} disabled={saving}>
             <Save size={14} />
-            {saving ? '保存中...' : activeTemplateId ? '保存' : '保存为模板'}
+            {saving ? '保存中...' : '保存'}
           </button>
           <button className="ghost-button compact-button" onClick={onSaveAsTemplate} disabled={saving}>
             <Save size={14} />
-            另存为
+            另存为模板
           </button>
           <button className="print-button compact-button" onClick={onPrintCurrent} disabled={printing || !currentPrinter?.isAvailable}>
             <Printer size={14} />

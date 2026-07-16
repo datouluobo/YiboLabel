@@ -44,16 +44,16 @@ export function TemplateLibraryView({
       <div className="panel-heading template-browser-head">
         <div>
           <span>模板库</span>
-          <p className="panel-note">打开、搜索和管理本地模板，或新建空白标签开始编辑。</p>
+          <p className="panel-note">打开和管理本地模板，也可新建空白草稿或导入外部文件为草稿。</p>
         </div>
         <div className="command-bar">
           <button className="ghost-button compact-button" onClick={onCreateDocument}>
             <FilePlus2 size={14} />
-            新建标签
+            新建草稿
           </button>
           <button className="ghost-button compact-button" onClick={onImportDdl}>
             <Upload size={14} />
-            导入 DDL
+            导入为草稿
           </button>
         </div>
       </div>
@@ -79,16 +79,16 @@ export function TemplateLibraryView({
           <div className="empty-workspace">
             <div className="empty-workspace-copy">
               <h2>{templates.length === 0 ? '还没有本地模板' : '没有匹配的模板'}</h2>
-              <p>{templates.length === 0 ? '先新建一个标签并保存，或导入一份 DDL 模板。' : '试试调整搜索词或排序方式。'}</p>
+              <p>{templates.length === 0 ? '先新建一个草稿并保存为模板，或导入一份文件作为草稿。' : '试试调整搜索词或排序方式。'}</p>
             </div>
             <div className="empty-workspace-actions">
               <button className="action-button" onClick={onCreateDocument}>
                 <FilePlus2 size={16} />
-                新建标签
+                新建草稿
               </button>
               <button className="ghost-button" onClick={onImportDdl}>
                 <Upload size={16} />
-                导入 DDL
+                导入为草稿
               </button>
             </div>
           </div>

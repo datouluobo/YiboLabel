@@ -1,8 +1,10 @@
 import { FilePlus2, RotateCcw, Upload } from 'lucide-react'
 import clsx from 'clsx'
 import type { PointerEvent as ReactPointerEvent, RefObject, WheelEvent as ReactWheelEvent } from 'react'
+import { getTabKindLabel } from '../domain/editorTabs'
 import type { Bounds, RulerTick, SnapLine } from '../domain/editorGeometry'
 import { isLexiconEnabledElement } from '../domain/labelDocument'
+import type { EditorTab } from '../domain/workspace'
 import { ElementPreview } from './ElementInspector'
 import type { LabelDocument, LabelElement } from '../types'
 
@@ -11,6 +13,7 @@ type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type EditorCanvasPanelProps = {
   hasActiveTab: boolean
   labelDocument: LabelDocument
+  activeTabOrigin: EditorTab['origin'] | null
   activeTemplateId: string | null
   activeTabDirty: boolean
   selectedElementIds: string[]
@@ -48,6 +51,7 @@ type EditorCanvasPanelProps = {
 export function EditorCanvasPanel({
   hasActiveTab,
   labelDocument,
+  activeTabOrigin,
   activeTemplateId,
   activeTabDirty,
   selectedElementIds,
@@ -89,7 +93,7 @@ export function EditorCanvasPanel({
             <div className="canvas-toolbar-group">
               <div className="document-state">
                 <span className={clsx('document-state-badge', activeTemplateId ? 'template' : 'draft')}>
-                  {activeTemplateId ? '模板草稿' : '未绑定草稿'}
+                  {activeTabOrigin ? getTabKindLabel({ origin: activeTabOrigin, templateId: activeTemplateId }) : '未绑定草稿'}
                 </span>
                 <span className={clsx('document-state-badge', activeTabDirty ? 'dirty' : 'saved')}>
                   {activeTabDirty ? '未保存修改' : '已保存'}
@@ -233,16 +237,16 @@ export function EditorCanvasPanel({
         <div className="empty-workspace">
           <div className="empty-workspace-copy">
             <h2>工作区为空</h2>
-            <p>先新建一个标签、导入 DDL，或从顶部模板库打开已有模板。</p>
+            <p>先新建一个空白草稿、导入外部文件为草稿，或从模板库打开已有模板。</p>
           </div>
           <div className="empty-workspace-actions">
             <button className="action-button" onClick={onCreateFreshDocument}>
               <FilePlus2 size={16} />
-              新建标签
+              新建草稿
             </button>
             <button className="ghost-button" onClick={onImportDdl}>
               <Upload size={16} />
-              导入 DDL
+              导入为草稿
             </button>
             <button className="ghost-button" onClick={onReopenLastClosedTab} disabled={recentClosedTabsCount === 0}>
               <RotateCcw size={16} />

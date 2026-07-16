@@ -2,11 +2,10 @@ import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import {
   defaultFontFamily,
-  getQrTextAreaHeightMm,
-  minElementSizeMm,
   normalizeFontFamily,
   pointsToMm,
 } from './labelDocument'
+import { getBarcodeLayout, getQrCodeLayout } from './codeElementLayout'
 import type { BarcodeElement, ImageElement, LabelDocument, LabelElement, QrCodeElement, TextElement } from '../types'
 
 const defaultExportDpi = 203
@@ -217,25 +216,22 @@ function renderPdfBarcode(element: BarcodeElement, width: number, height: number
   try {
     const encodings = getBarcodeEncodings(element)
     const moduleCount = encodings.reduce((total, encoding) => total + encoding.data.length, 0)
-    const moduleWidth = width / Math.max(1, moduleCount)
-    const textHeight = element.showHumanReadable ? Math.max(10, element.humanReadableFontSize * 1.25) : 0
-    const barHeight = Math.max(1, height - textHeight)
-    const barY = element.showHumanReadable && element.textPosition === 'bottom' ? textHeight : 0
-    const textY = element.textPosition === 'top' ? height - textHeight * 0.8 : 0
+    const layout = getBarcodeLayout(element, width, height, 72 / 25.4)
+    const moduleWidth = layout.code.width / Math.max(1, moduleCount)
     const parts: string[] = []
-    let cursor = 0
+    let cursor = layout.code.x
 
     for (const encoding of encodings) {
       for (const bit of encoding.data) {
         if (bit === '1') {
-          parts.push(renderPdfFilledRect(cursor, barY, moduleWidth, barHeight))
+          parts.push(renderPdfFilledRect(cursor, height - layout.code.y - layout.code.height, moduleWidth, layout.code.height))
         }
         cursor += moduleWidth
       }
     }
 
-    if (element.showHumanReadable) {
-      parts.push(renderPdfCenteredText(element.value, element.humanReadableFontSize * 1.35, element.humanReadableFontFamily, width, textY))
+    if (layout.text) {
+      parts.push(renderPdfCenteredText(element.value, layout.fontSize, element.humanReadableFontFamily, layout.text.width, height - layout.text.y - layout.text.height, layout.text.x))
     }
 
     return parts.join('\n')
@@ -245,26 +241,21 @@ function renderPdfBarcode(element: BarcodeElement, width: number, height: number
 }
 
 function renderPdfQrCode(element: QrCodeElement, width: number, height: number) {
-  const textHeightMm = getQrTextAreaHeightMm(element)
-  const textHeight = mmToPt(textHeightMm)
-  const coreSize = Math.max(mmToPt(minElementSizeMm), Math.min(width, height - textHeight))
+  const layout = getQrCodeLayout(element, width, height, 72 / 25.4)
   const qr = QRCode.create(element.value || ' ', { errorCorrectionLevel: 'M' })
-  const moduleSize = coreSize / qr.modules.size
-  const qrX = (width - coreSize) / 2
-  const qrY = element.showHumanReadable && element.textPosition === 'bottom' ? textHeight : 0
+  const moduleSize = layout.code.width / qr.modules.size
   const parts: string[] = []
 
   for (let row = 0; row < qr.modules.size; row += 1) {
     for (let column = 0; column < qr.modules.size; column += 1) {
       if (qr.modules.data[row * qr.modules.size + column]) {
-        parts.push(renderPdfFilledRect(qrX + column * moduleSize, qrY + (qr.modules.size - row - 1) * moduleSize, moduleSize, moduleSize))
+        parts.push(renderPdfFilledRect(layout.code.x + column * moduleSize, height - layout.code.y - ((row + 1) * moduleSize), moduleSize, moduleSize))
       }
     }
   }
 
-  if (element.showHumanReadable) {
-    const textY = element.textPosition === 'top' ? height - textHeight * 0.8 : 0
-    parts.push(renderPdfCenteredText(element.value, element.humanReadableFontSize * 1.15, element.humanReadableFontFamily, width, textY))
+  if (layout.text) {
+    parts.push(renderPdfCenteredText(element.value, layout.fontSize, element.humanReadableFontFamily, layout.text.width, height - layout.text.y - layout.text.height, layout.text.x))
   }
 
   return parts.join('\n')
@@ -313,10 +304,10 @@ function renderPdfRectangle(width: number, height: number, lineWidth: number) {
   return `0 0 0 RG ${formatPdfNumber(lineWidth)} w ${formatPdfNumber(inset)} ${formatPdfNumber(inset)} ${formatPdfNumber(Math.max(0.1, width - lineWidth))} ${formatPdfNumber(Math.max(0.1, height - lineWidth))} re S`
 }
 
-function renderPdfCenteredText(text: string, fontSize: number, fontFamily: string, width: number, y: number) {
+function renderPdfCenteredText(text: string, fontSize: number, fontFamily: string, width: number, y: number, xOffset = 0) {
   const estimatedWidth = measurePdfTextWidth(text, fontSize, 500, fontFamily)
   const fitScale = clamp(width / Math.max(1, estimatedWidth), 0.55, 1)
-  const x = (width - estimatedWidth * fitScale) / 2
+  const x = xOffset + ((width - estimatedWidth * fitScale) / 2)
   return renderPdfTextRuns(text || ' ', fontSize, 500, fontFamily, x, y, fitScale)
 }
 
@@ -611,20 +602,30 @@ function renderBarcodeElement(context: CanvasRenderingContext2D, element: Barcod
   barcodeCanvas.height = Math.max(48, Math.round(height))
 
   try {
-    const moduleCount = getBarcodeModuleCount(element)
-    const valueHeight = element.showHumanReadable ? Math.max(16, barcodeCanvas.height * 0.22) : 0
-    JsBarcode(barcodeCanvas, element.value || ' ', {
+    const layout = getBarcodeLayout(element, barcodeCanvas.width, barcodeCanvas.height, barcodeCanvas.width / Math.max(1, element.width))
+    const drawableCanvas = document.createElement('canvas')
+    drawableCanvas.width = Math.max(1, Math.round(layout.code.width))
+    drawableCanvas.height = Math.max(1, Math.round(layout.code.height))
+    JsBarcode(drawableCanvas, element.value || ' ', {
       format: mapBarcodeFormat(element.symbology),
-      width: Math.max(1, Math.min(4, Math.floor((barcodeCanvas.width * 0.92) / moduleCount))),
-      height: Math.max(18, barcodeCanvas.height - valueHeight),
-      displayValue: element.showHumanReadable,
-      textPosition: element.textPosition,
+      width: 1,
+      height: drawableCanvas.height,
+      displayValue: false,
       margin: 0,
       background: '#ffffff',
-      font: normalizeFontFamily(element.humanReadableFontFamily),
-      fontSize: Math.max(8, element.humanReadableFontSize * 1.2),
-      textMargin: Math.max(2, barcodeCanvas.height * 0.02),
     })
+    const barcodeContext = barcodeCanvas.getContext('2d')
+    if (!barcodeContext) {
+      throw new Error('无法创建条码导出画布。')
+    }
+
+    barcodeContext.fillStyle = '#ffffff'
+    barcodeContext.fillRect(0, 0, barcodeCanvas.width, barcodeCanvas.height)
+    barcodeContext.imageSmoothingEnabled = false
+    barcodeContext.drawImage(drawableCanvas, layout.code.x, layout.code.y, layout.code.width, layout.code.height)
+    if (layout.text) {
+      renderHumanReadableText(barcodeContext, element.value, layout.fontSize, element.humanReadableFontFamily, layout.text.width, layout.text.height, layout.text.x, layout.text.y)
+    }
     context.drawImage(barcodeCanvas, 0, 0, width, height)
   } catch {
     drawFallbackText(context, element.value, width, height)
@@ -638,27 +639,21 @@ async function renderQrCodeElement(
   height: number,
   pixelsPerMm: number,
 ) {
-  const textHeightMm = getQrTextAreaHeightMm(element)
-  const textHeight = textHeightMm * pixelsPerMm
-  const coreSize = Math.max(minElementSizeMm * pixelsPerMm, Math.min(width, height - textHeight))
+  const layout = getQrCodeLayout(element, width, height, pixelsPerMm)
   const qrCanvas = document.createElement('canvas')
-  qrCanvas.width = Math.max(64, Math.round(coreSize))
-  qrCanvas.height = Math.max(64, Math.round(coreSize))
-  const qrY = element.showHumanReadable && element.textPosition === 'top' ? textHeight : 0
+  qrCanvas.width = Math.max(64, Math.round(layout.code.width))
+  qrCanvas.height = Math.max(64, Math.round(layout.code.height))
 
   await QRCode.toCanvas(qrCanvas, element.value || ' ', {
     margin: 0,
     width: qrCanvas.width,
   })
 
-  if (element.showHumanReadable && element.textPosition === 'top') {
-    renderHumanReadableText(context, element.value, element.humanReadableFontSize, element.humanReadableFontFamily, width, textHeight)
-  }
+  context.imageSmoothingEnabled = false
+  context.drawImage(qrCanvas, layout.code.x, layout.code.y, layout.code.width, layout.code.height)
 
-  context.drawImage(qrCanvas, (width - coreSize) / 2, qrY, coreSize, coreSize)
-
-  if (element.showHumanReadable && element.textPosition === 'bottom') {
-    renderHumanReadableText(context, element.value, element.humanReadableFontSize, element.humanReadableFontFamily, width, textHeight, qrY + coreSize)
+  if (layout.text) {
+    renderHumanReadableText(context, element.value, layout.fontSize, element.humanReadableFontFamily, layout.text.width, layout.text.height, layout.text.x, layout.text.y)
   }
 }
 
@@ -693,17 +688,22 @@ function renderHumanReadableText(
   fontFamily: string,
   width: number,
   height: number,
+  x = 0,
   y = 0,
 ) {
   context.save()
   context.fillStyle = '#18222f'
-  context.font = `500 ${Math.max(8, fontSize * 1.2)}px ${buildFontFamily(fontFamily)}`
+  context.font = `500 ${Math.max(1, fontSize)}px ${buildFontFamily(fontFamily)}`
   context.textAlign = 'center'
   context.textBaseline = 'middle'
   context.beginPath()
-  context.rect(0, y, width, height)
+  context.rect(x, y, width, height)
   context.clip()
-  context.fillText(value, width / 2, y + height / 2, width)
+  const measuredWidth = context.measureText(value || ' ').width
+  const fitScale = clamp((width - 2) / Math.max(1, measuredWidth), 0.55, 1)
+  context.translate(x + width / 2, y + height / 2)
+  context.scale(fitScale, 1)
+  context.fillText(value || ' ', 0, 0)
   context.restore()
 }
 
@@ -715,18 +715,6 @@ function drawFallbackText(context: CanvasRenderingContext2D, text: string, width
   context.textBaseline = 'middle'
   context.fillText(text || ' ', width / 2, height / 2, width)
   context.restore()
-}
-
-function getBarcodeModuleCount(element: BarcodeElement) {
-  const data: { encodings?: Array<{ data?: string }> } = {}
-  JsBarcode(data, element.value || ' ', {
-    format: mapBarcodeFormat(element.symbology),
-    displayValue: false,
-    margin: 0,
-  })
-
-  const moduleCount = data.encodings?.reduce((total, encoding) => total + (encoding.data?.length ?? 0), 0) ?? 0
-  return Math.max(40, moduleCount)
 }
 
 function mapBarcodeFormat(symbology: string) {
