@@ -36,7 +36,6 @@ export type WorkspaceSnapshot = {
     activeSurface: 'editor' | 'templates' | 'lexicons'
     lastEditorTabId: string | null
     showDocumentDialog: boolean
-    layersCollapsed: boolean
   }
   tabs: Array<{
     id: string
@@ -150,7 +149,6 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
           activeSurface: 'editor',
           lastEditorTabId: parsed.activeTabId ?? null,
           showDocumentDialog: false,
-          layersCollapsed: false,
         },
       }
     }

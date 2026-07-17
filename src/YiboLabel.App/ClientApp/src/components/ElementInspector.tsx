@@ -33,6 +33,8 @@ const fontFamilyOptions = [
   { value: 'Arial', label: 'Arial' },
 ]
 
+const formatOneDecimal = (value: number) => (Number.isFinite(value) ? value.toFixed(1) : '0.0')
+
 export function ToolButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
   return (
     <button className="tool-button" onClick={onClick}>
@@ -138,6 +140,7 @@ export function ElementPreview({ element, canvasScale }: { element: LabelElement
 function TextPreview({ element, canvasScale }: { element: TextElement; canvasScale: number }) {
   const fontSizePx = Math.max(12, pointsToMm(element.fontSize) * canvasScale)
   const fontWeight = element.bold ? 700 : 500
+  const fontStyle = element.italic ? 'italic' : 'normal'
   const fontFamily = `"${normalizeFontFamily(element.fontFamily)}", "Microsoft YaHei", "微软雅黑", sans-serif`
   const availableWidth = Math.max(1, element.width * canvasScale - 4)
   const measuredWidth = useMemo(() => {
@@ -147,7 +150,7 @@ function TextPreview({ element, canvasScale }: { element: TextElement; canvasSca
       return availableWidth
     }
 
-    context.font = `${fontWeight} ${fontSizePx}px ${fontFamily}`
+    context.font = `${fontStyle} ${fontWeight} ${fontSizePx}px ${fontFamily}`
     return context.measureText(element.text || ' ').width
   }, [availableWidth, element.text, fontSizePx, fontFamily, fontWeight])
   const fitScale = clamp(availableWidth / Math.max(1, measuredWidth), 0.55, 1)
@@ -160,6 +163,7 @@ function TextPreview({ element, canvasScale }: { element: TextElement; canvasSca
         style={{
           fontSize: `${fontSizePx}px`,
           fontWeight,
+          fontStyle,
           fontFamily,
           transform: `scaleX(${fitScale})`,
           transformOrigin: element.align === 'right' ? 'right top' : element.align === 'center' ? 'center top' : 'left top',
@@ -379,75 +383,11 @@ export function ElementInspector({
     onPatch({ humanReadableFontSize: fontSize } as Partial<QrCodeElement>)
   }
 
-  return (
-    <div className="inspector-fields">
-      <InspectorSection className="overview-section">
-        <label>
-          名称
-          <input value={element.name ?? ''} onChange={(event) => onNameChange(event.target.value)} />
-        </label>
-      </InspectorSection>
-
-      <InspectorSection title="位置 / 尺寸" hint={geometryLocked ? '已锁定' : 'mm'}>
-        <div className="field-row">
-          <label>
-            X
-            <input type="number" step="0.5" value={element.x} disabled={geometryLocked} onChange={(event) => onPatch({ x: Number(event.target.value) })} />
-          </label>
-          <label>
-            Y
-            <input type="number" step="0.5" value={element.y} disabled={geometryLocked} onChange={(event) => onPatch({ y: Number(event.target.value) })} />
-          </label>
-        </div>
-        <div className="field-row">
-          <label>
-            宽
-            <input type="number" step="0.5" value={element.width} disabled={geometryLocked} onChange={(event) => patchSize({ width: Number(event.target.value) })} />
-          </label>
-          <label>
-            高
-            <input type="number" step="0.5" value={element.height} disabled={geometryLocked} onChange={(event) => patchSize({ height: Number(event.target.value) })} />
-          </label>
-        </div>
-        <div className="nudge-grid">
-          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0, -0.5)}>
-            ↑ 0.5
-          </button>
-          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(-0.5, 0)}>
-            ← 0.5
-          </button>
-          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0.5, 0)}>
-            → 0.5
-          </button>
-          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0, 0.5)}>
-            ↓ 0.5
-          </button>
-        </div>
-      </InspectorSection>
-
-      <InspectorSection>
-        <label>
-          旋转
-          <input type="number" step="1" min="0" max="359" value={element.rotation} disabled={geometryLocked} onChange={(event) => onPatch({ rotation: Number(event.target.value) })} />
-        </label>
-        <div className="segmented-row">
-          {rotationPresets.map((preset) => (
-            <button
-              key={preset}
-              type="button"
-              className={clsx('mini-button', normalizeRotation(element.rotation) === preset && 'active')}
-              disabled={geometryLocked}
-              onClick={() => onPatch({ rotation: preset })}
-            >
-              {preset}°
-            </button>
-          ))}
-        </div>
-      </InspectorSection>
-
-      {element.type === 'text' && (
-        <InspectorSection title="文本内容">
-          <label>
+  const contentSection = (() => {
+    if (element.type === 'text') {
+      return (
+        <InspectorSection title="文本" className="text-settings-section">
+          <label className="text-content-field">
             <span className="visually-hidden">内容</span>
             <ContentValueInput
               value={element.text}
@@ -455,7 +395,7 @@ export function ElementInspector({
               onChange={(value) => onPatch({ text: value } as Partial<TextElement>)}
             />
           </label>
-          <div className="field-row">
+          <div className="text-format-grid">
             <label>
               字号
               <input type="number" min="4" max="96" value={element.fontSize} onChange={(event) => onPatch({ fontSize: Number(event.target.value) } as Partial<TextElement>)} />
@@ -465,37 +405,43 @@ export function ElementInspector({
               value={element.fontFamily ?? defaultFontFamily}
               onChange={(value) => onPatch({ fontFamily: value } as Partial<TextElement>)}
             />
-          </div>
-          <div className="field-row">
-            <div className="inline-field">
-              <span>对齐</span>
-              <div className="segmented-row">
-                {[
-                  { value: 'left', label: '左' },
-                  { value: 'center', label: '中' },
-                  { value: 'right', label: '右' },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={clsx('mini-button', element.align === option.value && 'active')}
-                    onClick={() => onPatch({ align: option.value as TextElement['align'] } as Partial<TextElement>)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+            <div className="text-style-toggles">
+              <label className="toggle-row text-style-toggle">
+                <input type="checkbox" checked={element.bold} onChange={(event) => onPatch({ bold: event.target.checked } as Partial<TextElement>)} />
+                粗体
+              </label>
+              <label className="toggle-row text-style-toggle">
+                <input type="checkbox" checked={element.italic} onChange={(event) => onPatch({ italic: event.target.checked } as Partial<TextElement>)} />
+                斜体
+              </label>
             </div>
           </div>
-          <label className="toggle-row">
-            <input type="checkbox" checked={element.bold} onChange={(event) => onPatch({ bold: event.target.checked } as Partial<TextElement>)} />
-            粗体
-          </label>
+          <div className="text-align-row">
+            <span>对齐</span>
+            <div className="segmented-row">
+              {[
+                { value: 'left', label: '左' },
+                { value: 'center', label: '中' },
+                { value: 'right', label: '右' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={clsx('mini-button', element.align === option.value && 'active')}
+                  onClick={() => onPatch({ align: option.value as TextElement['align'] } as Partial<TextElement>)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </InspectorSection>
-      )}
+      )
+    }
 
-      {element.type === 'barcode' && (
-        <InspectorSection title="条码内容">
+    if (element.type === 'barcode') {
+      return (
+        <InspectorSection title="条码">
           <label>
             <span className="visually-hidden">内容</span>
             <ContentValueInput
@@ -551,10 +497,12 @@ export function ElementInspector({
             onChange={(value) => onPatch({ humanReadableFontFamily: value } as Partial<BarcodeElement>)}
           />
         </InspectorSection>
-      )}
+      )
+    }
 
-      {element.type === 'qrcode' && (
-        <InspectorSection title="二维码内容">
+    if (element.type === 'qrcode') {
+      return (
+        <InspectorSection title="二维码">
           <label>
             <span className="visually-hidden">内容</span>
             <ContentValueInput
@@ -590,7 +538,82 @@ export function ElementInspector({
             onChange={(value) => onPatch({ humanReadableFontFamily: value } as Partial<QrCodeElement>)}
           />
         </InspectorSection>
-      )}
+      )
+    }
+
+    return null
+  })()
+
+  return (
+    <div className="inspector-fields">
+      <InspectorSection className="overview-section">
+        <label>
+          名称
+          <input value={element.name ?? ''} onChange={(event) => onNameChange(event.target.value)} />
+        </label>
+      </InspectorSection>
+
+      {contentSection}
+
+      <InspectorSection title="位置" hint={geometryLocked ? '已锁定' : 'mm'}>
+        <div className="field-row">
+          <label>
+            X
+            <input type="number" step="0.1" value={formatOneDecimal(element.x)} disabled={geometryLocked} onChange={(event) => onPatch({ x: Number(event.target.value) })} />
+          </label>
+          <label>
+            Y
+            <input type="number" step="0.1" value={formatOneDecimal(element.y)} disabled={geometryLocked} onChange={(event) => onPatch({ y: Number(event.target.value) })} />
+          </label>
+        </div>
+        <div className="nudge-grid">
+          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0, -0.5)}>
+            ↑ 0.5
+          </button>
+          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(-0.5, 0)}>
+            ← 0.5
+          </button>
+          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0.5, 0)}>
+            → 0.5
+          </button>
+          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0, 0.5)}>
+            ↓ 0.5
+          </button>
+        </div>
+      </InspectorSection>
+
+      <InspectorSection title="尺寸" hint={geometryLocked ? '已锁定' : 'mm'}>
+        <div className="field-row">
+          <label>
+            宽
+            <input type="number" step="0.1" value={formatOneDecimal(element.width)} disabled={geometryLocked} onChange={(event) => patchSize({ width: Number(event.target.value) })} />
+          </label>
+          <label>
+            高
+            <input type="number" step="0.1" value={formatOneDecimal(element.height)} disabled={geometryLocked} onChange={(event) => patchSize({ height: Number(event.target.value) })} />
+          </label>
+        </div>
+      </InspectorSection>
+
+      <InspectorSection>
+        <label>
+          旋转
+          <input type="number" step="1" min="0" max="359" value={element.rotation} disabled={geometryLocked} onChange={(event) => onPatch({ rotation: Number(event.target.value) })} />
+        </label>
+        <div className="segmented-row">
+          {rotationPresets.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              className={clsx('mini-button', normalizeRotation(element.rotation) === preset && 'active')}
+              disabled={geometryLocked}
+              onClick={() => onPatch({ rotation: preset })}
+            >
+              {preset}°
+            </button>
+          ))}
+        </div>
+      </InspectorSection>
 
       {element.type === 'rectangle' && (
         <InspectorSection title="矩形样式">

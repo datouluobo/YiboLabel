@@ -44,8 +44,8 @@ export function DocumentPrintDialog({
     <div className="modal-backdrop" onClick={onClose}>
       <section className="modal-panel" onClick={(event) => event.stopPropagation()}>
         <div className="panel-heading">
-          <span>文档与打印</span>
-          <button className="inline-icon-button" onClick={onClose} aria-label="关闭文档与打印">
+          <span>页面布局</span>
+          <button className="inline-icon-button" onClick={onClose} aria-label="关闭页面布局">
             ×
           </button>
         </div>

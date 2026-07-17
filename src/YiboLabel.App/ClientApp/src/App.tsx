@@ -37,7 +37,6 @@ import { ContentPicker } from './components/ContentPicker'
 import { DocumentPrintDialog } from './components/DocumentPrintDialog'
 import { EditorCanvasPanel } from './components/EditorCanvasPanel'
 import { EditorSidebar } from './components/EditorSidebar'
-import { EditorTabStrip } from './components/EditorTabStrip'
 import { ElementInspector, MultiSelectionInspector } from './components/ElementInspector'
 import { ExportDialog, type ExportDialogOptions } from './components/ExportDialog'
 import { GroupBindingPanel } from './components/GroupBindingPanel'
@@ -212,7 +211,6 @@ export default function App() {
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportOptions, setExportOptions] = useState<ExportDialogOptions>({ format: 'pdf', pdfPaperMode: 'label' })
-  const [layersCollapsed, setLayersCollapsed] = useState(false)
   const [unsavedDialog, setUnsavedDialog] = useState<UnsavedDialogState | null>(null)
   const [pendingSavesOpen, setPendingSavesOpen] = useState(false)
   const [exitReviewQueue, setExitReviewQueue] = useState<string[]>([])
@@ -233,10 +231,8 @@ export default function App() {
   const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? null, [activeTabId, tabs])
   const hasActiveTab = activeTab !== null
   const labelDocument = activeTab?.document ?? fallbackDocument
-  const activeDocumentName = activeTab?.document.name?.trim() || '未命名标签'
   const selectedElementIds = activeTab?.selectedElementIds ?? emptySelectionIds
   const history = activeTab?.history ?? emptyHistoryState
-  const activeTabOrigin = activeTab?.origin ?? null
   const activeTemplateId = activeTab?.templateId ?? null
   const documentRef = useRef(labelDocument)
   const historyRef = useRef(history)
@@ -285,7 +281,6 @@ export default function App() {
         activeSurface,
         lastEditorTabId,
         showDocumentDialog: showDocumentDialog && hasActiveTab,
-        layersCollapsed,
       },
       tabs: tabs.map((tab) => ({
         id: tab.id,
@@ -299,7 +294,7 @@ export default function App() {
     }
 
     window.localStorage.setItem(workspaceStorageKey, JSON.stringify(snapshot))
-  }, [activeSurface, activeTabId, hasActiveTab, lastEditorTabId, layersCollapsed, showDocumentDialog, tabs])
+  }, [activeSurface, activeTabId, hasActiveTab, lastEditorTabId, showDocumentDialog, tabs])
 
   const sortedElements = useMemo(() => (hasActiveTab ? sortElements(labelDocument.elements) : []), [hasActiveTab, labelDocument.elements])
   const visibleElements = useMemo(() => sortedElements.filter((element) => !element.hidden), [sortedElements])
@@ -989,7 +984,6 @@ export default function App() {
         setLastEditorTabId(savedWorkspace?.ui?.lastEditorTabId ?? savedWorkspace?.activeTabId ?? restoredTabs[0].id)
         setActiveSurface(restoredSurface)
         setShowDocumentDialog(Boolean(savedWorkspace?.ui?.showDocumentDialog))
-        setLayersCollapsed(Boolean(savedWorkspace?.ui?.layersCollapsed))
         setStatus(`已恢复上次工作区，共 ${restoredTabs.length} 个标签页。`)
         return
       }
@@ -2026,11 +2020,14 @@ export default function App() {
         activeSurface={activeSurface}
         showDocumentDialog={showDocumentDialog}
         hasActiveTab={hasActiveTab}
-        status={status}
-        history={history}
+        tabs={tabs}
+        activeTabId={activeTabId}
+        isTabDirty={isTabDirty}
         recentClosedTabsCount={recentClosedTabs.length}
+        bindableSelectedCount={bindableSelectedElements.length}
+        contentPickerOpen={contentPickerOpen}
+        groupBinderOpen={groupBinderOpen}
         appState={appState}
-        activeDocumentName={activeDocumentName}
         activeTabDirty={activeTabDirty}
         printerDevicePath={labelDocument.printerDevicePath ?? appState?.printers[0]?.devicePath ?? ''}
         currentPrinter={currentPrinter}
@@ -2038,12 +2035,13 @@ export default function App() {
         saving={saving}
         printing={printing}
         exporting={exporting}
-        activeTabOrigin={activeTabOrigin}
-        activeTemplateId={activeTemplateId}
+        onShowEditor={showEditor}
+        onCloseTab={closeTab}
+        onCreateFreshDocument={createFreshDocument}
         onToggleSurface={toggleSurface}
         onShowDocumentDialog={() => setShowDocumentDialog(true)}
-        onUndo={undo}
-        onRedo={redo}
+        onToggleGroupBinder={() => setGroupBinderOpen((open) => !open)}
+        onToggleContentPicker={() => setContentPickerOpen((open) => !open)}
         onImportDdl={() => ddlInputRef.current?.click()}
         onReopenLastClosedTab={reopenLastClosedTab}
         onPrinterChange={(devicePath) => setDocumentField('printerDevicePath', devicePath)}
@@ -2051,18 +2049,9 @@ export default function App() {
         onSaveCurrentTemplate={() => void saveCurrentTemplate()}
         onSaveAsTemplate={() => void saveAsTemplate()}
         onShowExportDialog={() => setShowExportDialog(true)}
+        onShowPrintPreview={() => setStatus('预览页面将在后续版本开放。')}
         onPrintCurrent={printCurrent}
         onRequestAppClose={requestAppClose}
-      />
-
-      <EditorTabStrip
-        tabs={tabs}
-        activeSurface={activeSurface}
-        activeTabId={activeTabId}
-        isTabDirty={isTabDirty}
-        onShowEditor={showEditor}
-        onCloseTab={closeTab}
-        onCreateFreshDocument={createFreshDocument}
       />
 
       <main className={clsx('workspace', activeSurface !== 'editor' && 'library-mode')}>
@@ -2104,8 +2093,6 @@ export default function App() {
           <>
             <EditorSidebar
               hasActiveTab={hasActiveTab}
-              elementCount={labelDocument.elements.length}
-              layersCollapsed={layersCollapsed}
               selectedElementIds={selectedElementIds}
               sortedElements={listOrderedElements}
               onAddText={() => addNewElement('text')}
@@ -2114,7 +2101,6 @@ export default function App() {
               onAddLine={() => addNewElement('line')}
               onAddRectangle={() => addNewElement('rectangle')}
               onAddImage={() => fileInputRef.current?.click()}
-              onToggleLayersCollapsed={() => setLayersCollapsed((current) => !current)}
               onReorderFront={() => reorderSelected('front')}
               onReorderForward={() => reorderSelected('forward')}
               onReorderBackward={() => reorderSelected('backward')}
@@ -2141,14 +2127,10 @@ export default function App() {
             <EditorCanvasPanel
               hasActiveTab={hasActiveTab}
               labelDocument={labelDocument}
-              activeTabOrigin={activeTabOrigin}
               activeTemplateId={activeTemplateId}
-              activeTabDirty={activeTabDirty}
+              status={status}
+              history={history}
               selectedElementIds={selectedElementIds}
-              visibleElementsCount={visibleElements.length}
-              bindableSelectedCount={bindableSelectedElements.length}
-              contentPickerOpen={contentPickerOpen}
-              groupBinderOpen={groupBinderOpen}
               exporting={exporting}
               canvasScale={canvasScale}
               horizontalRulerTicks={horizontalRulerTicks}
@@ -2161,8 +2143,8 @@ export default function App() {
               snapLines={snapLines}
               marqueeBounds={marqueeBounds}
               recentClosedTabsCount={recentClosedTabs.length}
-              onToggleGroupBinder={() => setGroupBinderOpen((open) => !open)}
-              onToggleContentPicker={() => setContentPickerOpen((open) => !open)}
+              onUndo={undo}
+              onRedo={redo}
               onDuplicateSelected={duplicateSelectedElements}
               onDeleteSelected={deleteSelectedElements}
               onCanvasWrapPointerDown={handleCanvasWrapPointerDown}

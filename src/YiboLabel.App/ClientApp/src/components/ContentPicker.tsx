@@ -50,6 +50,10 @@ export function ContentPicker({
       <div
         className="content-picker-head"
         onPointerDown={(event) => {
+          if ((event.target as HTMLElement).closest('button, input, select, textarea')) {
+            return
+          }
+
           const startX = event.clientX - position.x
           const startY = event.clientY - position.y
           event.currentTarget.setPointerCapture(event.pointerId)
@@ -68,7 +72,7 @@ export function ContentPicker({
         }}
       >
         <strong>内容候选</strong>
-        <button className="inline-icon-button" type="button" onClick={onClose} aria-label="关闭内容浮窗">
+        <button className="inline-icon-button" type="button" onPointerDown={(event) => event.stopPropagation()} onClick={onClose} aria-label="关闭内容浮窗">
           ×
         </button>
       </div>

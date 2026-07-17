@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "template-20260717174448796-d21bbdb068d04a3d83c9a3aa20048018",
+  "name": "\u5FEB\u901F\u6807\u7B7E",
+  "createdAt": "2026-07-17T17:44:48.796489+08:00",
+  "updatedAt": "2026-07-17T17:44:48.796489+08:00",
+  "document": {
+    "name": "\u5FEB\u901F\u6807\u7B7E",
+    "widthMm": 40,
+    "heightMm": 30,
+    "printerDevicePath": null,
+    "copies": 1,
+    "darkness": 8,
+    "gapMm": 2,
+    "printRotation": 0,
+    "printInvert": false,
+    "printOffsetXMm": 0,
+    "printOffsetYMm": 0,
+    "elements": [
+      {
+        "text": "YiboLabel",
+        "fontSize": 24,
+        "fontFamily": "Microsoft YaHei",
+        "bold": true,
+        "align": "left",
+        "id": "5d7813a2-afb8-434d-900c-ab3ec1819b6b",
+        "name": "\u6807\u9898",
+        "x": 3,
+        "y": 3,
+        "width": 18,
+        "height": 6,
+        "rotation": 0,
+        "locked": false,
+        "hidden": false,
+        "zIndex": 0,
+        "lexiconGroupIds": [],
+        "defaultLexiconGroupId": null
+      }
+    ]
+  }
+}

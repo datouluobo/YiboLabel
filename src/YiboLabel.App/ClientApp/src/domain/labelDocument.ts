@@ -54,6 +54,7 @@ export const createBlankDocument = (name = '未命名标签'): LabelDocument =>
         fontSize: 24,
         fontFamily: defaultFontFamily,
         bold: true,
+        italic: false,
         align: 'left',
       },
     ],
@@ -75,7 +76,7 @@ export function createElement(type: LabelElement['type'], document: LabelDocumen
 
   const next =
     type === 'text'
-      ? { ...base, type, text: '新文本', fontSize: 22, fontFamily: defaultFontFamily, bold: false, align: 'left' as const }
+      ? { ...base, type, text: '新文本', fontSize: 22, fontFamily: defaultFontFamily, bold: false, italic: false, align: 'left' as const }
       : type === 'barcode'
         ? { ...base, type, width: 28, height: 10, value: '1234567890', symbology: '128', showHumanReadable: true, textPosition: 'bottom' as const, humanReadableFontSize: 12, humanReadableFontFamily: defaultFontFamily }
         : type === 'qrcode'
@@ -145,6 +146,7 @@ export function normalizeElement(element: LabelElement, document: LabelDocument,
       fontSize: clamp(Math.round(textElement.fontSize || 22), 4, 96),
       fontFamily: normalizeFontFamily(textElement.fontFamily),
       bold: Boolean(textElement.bold),
+      italic: Boolean(textElement.italic),
       align: textElement.align === 'center' || textElement.align === 'right' ? textElement.align : 'left',
     } as TextElement
   }

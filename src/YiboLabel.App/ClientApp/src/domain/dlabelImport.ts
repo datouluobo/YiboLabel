@@ -222,6 +222,7 @@ function parseDlabelObject(
       fontSize: dependencies.clamp(Math.round(readDlabelNumber(node, 'fontsize', 18)), 4, 96),
       fontFamily: dependencies.defaultFontFamily,
       bold: (node.getAttribute('fontbold') ?? '').toLowerCase() === 'true',
+      italic: (node.getAttribute('fontitalic') ?? '').toLowerCase() === 'true',
       align: mapDlabelTextAlign(node.getAttribute('alignment')),
     } satisfies TextElement
   }

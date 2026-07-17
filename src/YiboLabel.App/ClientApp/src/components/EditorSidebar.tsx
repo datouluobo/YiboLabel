@@ -10,6 +10,7 @@ import {
   Layers,
   LockKeyhole,
   Minus,
+  CircleHelp,
   QrCode,
   ScanBarcode,
   Square,
@@ -24,8 +25,6 @@ import type { LabelElement } from '../types'
 
 type EditorSidebarProps = {
   hasActiveTab: boolean
-  elementCount: number
-  layersCollapsed: boolean
   selectedElementIds: string[]
   sortedElements: LabelElement[]
   onAddText: () => void
@@ -34,7 +33,6 @@ type EditorSidebarProps = {
   onAddLine: () => void
   onAddRectangle: () => void
   onAddImage: () => void
-  onToggleLayersCollapsed: () => void
   onReorderFront: () => void
   onReorderForward: () => void
   onReorderBackward: () => void
@@ -47,8 +45,6 @@ type EditorSidebarProps = {
 
 export function EditorSidebar({
   hasActiveTab,
-  elementCount,
-  layersCollapsed,
   selectedElementIds,
   sortedElements,
   onAddText,
@@ -57,7 +53,6 @@ export function EditorSidebar({
   onAddLine,
   onAddRectangle,
   onAddImage,
-  onToggleLayersCollapsed,
   onReorderFront,
   onReorderForward,
   onReorderBackward,
@@ -186,10 +181,6 @@ export function EditorSidebar({
   return (
     <aside className="sidebar">
       <section className="panel insert-panel">
-        <div className="panel-heading">
-          <span>插入元素</span>
-          <span>{elementCount}</span>
-        </div>
         <div className="tool-grid">
           <ToolButton icon={<Type size={16} />} label="文本" onClick={onAddText} />
           <ToolButton icon={<ScanBarcode size={16} />} label="条码" onClick={onAddBarcode} />
@@ -201,84 +192,84 @@ export function EditorSidebar({
       </section>
 
       <section className="panel layers-panel">
-        <div className="panel-heading panel-heading-button">
-          <button className="collapse-trigger" onClick={onToggleLayersCollapsed}>
-            <span className="panel-title-with-icon">
-              <Layers size={15} />
-              元素
+        <div className="panel-heading">
+          <span className="panel-title-with-icon">
+            <Layers size={15} />
+            元素
+            <span
+              className="panel-help"
+              title="列表越靠上，画布越靠上。可拖拽调整顺序；Ctrl + 点击元素可多选，Alt + 点击画布可穿透选择下层元素。"
+              aria-label="元素列表说明"
+            >
+              <CircleHelp size={13} />
             </span>
-            <strong>{selectedElementIds.length > 0 ? `${selectedElementIds.length} / ${sortedElements.length}` : sortedElements.length}</strong>
-          </button>
+          </span>
+          <strong>{selectedElementIds.length > 0 ? `${selectedElementIds.length} / ${sortedElements.length}` : sortedElements.length}</strong>
         </div>
-        {!layersCollapsed ? (
-          <>
-            <div className="layer-toolbar" aria-label="元素顺序操作">
-              <LayerActionButton icon={<ChevronsUp size={14} />} label="置顶" disabled={selectedElementIds.length === 0} onClick={onReorderFront} />
-              <LayerActionButton icon={<ArrowUp size={14} />} label="上移" disabled={selectedElementIds.length === 0} onClick={onReorderForward} />
-              <LayerActionButton icon={<ArrowDown size={14} />} label="下移" disabled={selectedElementIds.length === 0} onClick={onReorderBackward} />
-              <LayerActionButton icon={<ChevronsDown size={14} />} label="置底" disabled={selectedElementIds.length === 0} onClick={onReorderBack} />
-            </div>
-            <div className="layer-list">
-              {!hasActiveTab ? (
-                <p className="empty-note">当前没有打开的文件，所以也没有可管理的元素。</p>
-              ) : sortedElements.length === 0 ? (
-                <p className="empty-note">还没有元素。先从上方插入文本、条码、二维码或形状。</p>
-              ) : (
-                sortedElements.map((element) => (
-                  <div
-                    key={element.id}
-                    data-layer-row-id={element.id}
-                    className={clsx(
-                      'layer-row',
-                      selectedElementIds.includes(element.id) && 'selected',
-                      dragState?.anchorId === element.id && `drag-${dragState.placement}`,
-                      dragState?.movingId === element.id && 'dragging',
-                    )}
-                  >
-                    <button
-                      className="layer-drag-handle"
-                      type="button"
-                      aria-label="拖拽调整顺序"
-                      title="拖拽调整顺序"
-                      onPointerDown={(event: ReactPointerEvent<HTMLButtonElement>) => {
-                        if (event.button !== 0) {
-                          return
-                        }
+        <div className="layer-toolbar" aria-label="元素顺序操作">
+          <LayerActionButton icon={<ChevronsUp size={14} />} label="置顶" disabled={selectedElementIds.length === 0} onClick={onReorderFront} />
+          <LayerActionButton icon={<ArrowUp size={14} />} label="上移" disabled={selectedElementIds.length === 0} onClick={onReorderForward} />
+          <LayerActionButton icon={<ArrowDown size={14} />} label="下移" disabled={selectedElementIds.length === 0} onClick={onReorderBackward} />
+          <LayerActionButton icon={<ChevronsDown size={14} />} label="置底" disabled={selectedElementIds.length === 0} onClick={onReorderBack} />
+        </div>
+        <div className="layer-list">
+          {!hasActiveTab ? (
+            <p className="empty-note">当前没有打开的文件，所以也没有可管理的元素。</p>
+          ) : sortedElements.length === 0 ? (
+            <p className="empty-note">还没有元素。先从上方插入文本、条码、二维码或形状。</p>
+          ) : (
+            sortedElements.map((element) => (
+              <div
+                key={element.id}
+                data-layer-row-id={element.id}
+                className={clsx(
+                  'layer-row',
+                  selectedElementIds.includes(element.id) && 'selected',
+                  dragState?.anchorId === element.id && `drag-${dragState.placement}`,
+                  dragState?.movingId === element.id && 'dragging',
+                )}
+              >
+                <button
+                  className="layer-drag-handle"
+                  type="button"
+                  aria-label="拖拽调整顺序"
+                  title="拖拽调整顺序"
+                  onPointerDown={(event: ReactPointerEvent<HTMLButtonElement>) => {
+                    if (event.button !== 0) {
+                      return
+                    }
 
-                        event.preventDefault()
-                        pointerDragRef.current = { pointerId: event.pointerId, movingId: element.id }
-                        setNextDragState({ movingId: element.id, anchorId: element.id, placement: 'before' })
-                        document.body.classList.add('is-layer-dragging')
-                        updateDragStateFromPoint(event.clientX, event.clientY)
-                      }}
-                    >
-                      <GripVertical size={14} />
-                    </button>
-                    <button
-                      className="layer-main"
-                      type="button"
-                      onClick={(event) => onSelectLayer(element.id, event.ctrlKey || event.metaKey)}
-                    >
-                      <span className="layer-type-badge" aria-hidden="true">
-                        {getElementTypeIcon(element)}
-                      </span>
-                      <span className="layer-preview">{getElementPreview(element)}</span>
-                    </button>
-                    <div className="layer-actions">
-                      <button className={clsx('mini-button layer-icon-button', element.hidden && 'active')} type="button" onClick={() => onToggleHidden(element.id)} title={element.hidden ? '显示元素' : '隐藏元素'} aria-label={element.hidden ? '显示元素' : '隐藏元素'}>
-                        {element.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                      <button className={clsx('mini-button layer-icon-button', element.locked && 'active')} type="button" onClick={() => onToggleLock(element.id)} title={element.locked ? '解锁元素' : '锁定元素'} aria-label={element.locked ? '解锁元素' : '锁定元素'}>
-                        {element.locked ? <LockKeyhole size={14} /> : <UnlockKeyhole size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <p className="panel-note">列表越靠上，画布越靠上。可直接拖拽调整顺序；Ctrl + 点击元素可多选，Alt + 点击画布可穿透选择下层元素。</p>
-          </>
-        ) : null}
+                    event.preventDefault()
+                    pointerDragRef.current = { pointerId: event.pointerId, movingId: element.id }
+                    setNextDragState({ movingId: element.id, anchorId: element.id, placement: 'before' })
+                    document.body.classList.add('is-layer-dragging')
+                    updateDragStateFromPoint(event.clientX, event.clientY)
+                  }}
+                >
+                  <GripVertical size={14} />
+                </button>
+                <button
+                  className="layer-main"
+                  type="button"
+                  onClick={(event) => onSelectLayer(element.id, event.ctrlKey || event.metaKey)}
+                >
+                  <span className="layer-type-badge" aria-hidden="true">
+                    {getElementTypeIcon(element)}
+                  </span>
+                  <span className="layer-preview">{getElementPreview(element)}</span>
+                </button>
+                <div className="layer-actions">
+                  <button className={clsx('mini-button layer-icon-button', element.hidden && 'active')} type="button" onClick={() => onToggleHidden(element.id)} title={element.hidden ? '显示元素' : '隐藏元素'} aria-label={element.hidden ? '显示元素' : '隐藏元素'}>
+                    {element.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                  <button className={clsx('mini-button layer-icon-button', element.locked && 'active')} type="button" onClick={() => onToggleLock(element.id)} title={element.locked ? '解锁元素' : '锁定元素'} aria-label={element.locked ? '解锁元素' : '锁定元素'}>
+                    {element.locked ? <LockKeyhole size={14} /> : <UnlockKeyhole size={14} />}
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </section>
     </aside>
   )

@@ -11,9 +11,9 @@
   max-height: 220px;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: white;
-  box-shadow: 0 18px 36px rgba(18, 32, 52, 0.14);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  box-shadow: 0 14px 28px oklch(0.2 0.035 232 / 0.16);
 }
 
 .suggestion-row,
@@ -24,7 +24,7 @@
   padding: 7px 9px;
   border: 0;
   border-bottom: 1px solid var(--line);
-  background: white;
+  background: var(--surface-strong);
   text-align: left;
   cursor: pointer;
 }
@@ -38,6 +38,7 @@
 .suggestion-row:hover,
 .content-picker-list button:hover {
   background: var(--accent-wash);
+  color: var(--accent-strong);
 }
 
 .suggestion-row span,
@@ -64,9 +65,9 @@
   max-height: min(460px, calc(100vh - 16px));
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 24px 56px rgba(15, 23, 36, 0.2);
+  border-radius: var(--radius-lg);
+  background: oklch(0.985 0.004 226);
+  box-shadow: 0 20px 44px oklch(0.18 0.04 232 / 0.2);
 }
 
 .content-picker-head {
@@ -81,7 +82,7 @@
 .content-picker-list {
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 
 .group-binding-panel {
@@ -93,9 +94,9 @@
   max-height: min(520px, calc(100vh - 16px));
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 22px 48px rgba(15, 23, 36, 0.18);
+  border-radius: var(--radius-lg);
+  background: oklch(0.985 0.004 226);
+  box-shadow: 0 20px 44px oklch(0.18 0.04 232 / 0.2);
 }
 
 .group-binding-head {
@@ -152,13 +153,13 @@
   margin-bottom: 0 !important;
   padding: 8px 9px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: white;
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
 }
 
 .group-binding-row.partial {
-  border-color: rgba(184, 106, 18, 0.34);
-  background: rgba(184, 106, 18, 0.08);
+  border-color: oklch(0.73 0.08 72);
+  background: oklch(0.92 0.055 72);
 }
 
 .group-binding-row input {

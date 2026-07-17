@@ -1,9 +1,9 @@
-import { BookOpen, Download, Printer, RefreshCw, RotateCcw, Save, Upload } from 'lucide-react'
+import { BookOpen, Download, Eye, FilePlus2, Printer, RefreshCw, RotateCcw, Save, Upload } from 'lucide-react'
 import clsx from 'clsx'
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useRef } from 'react'
+import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { sendWindowChromeCommand } from '../platform/windowChrome'
-import { getTabKindLabel } from '../domain/editorTabs'
-import type { EditorTab } from '../domain/workspace'
+import { getTabDisplayName, getTabKindLabel, type EditorTab } from '../domain/workspace'
 import type { AppStateResponse } from '../types'
 
 type WorkspaceTopbarProps = {
@@ -11,11 +11,14 @@ type WorkspaceTopbarProps = {
   activeSurface: 'editor' | 'templates' | 'lexicons'
   showDocumentDialog: boolean
   hasActiveTab: boolean
-  status: string
-  history: EditorTab['history']
+  tabs: EditorTab[]
+  activeTabId: string | null
+  isTabDirty: (tab: EditorTab) => boolean
   recentClosedTabsCount: number
+  bindableSelectedCount: number
+  contentPickerOpen: boolean
+  groupBinderOpen: boolean
   appState: AppStateResponse | null
-  activeDocumentName: string
   activeTabDirty: boolean
   printerDevicePath: string
   currentPrinter: AppStateResponse['printers'][number] | null
@@ -23,12 +26,13 @@ type WorkspaceTopbarProps = {
   saving: boolean
   printing: boolean
   exporting: boolean
-  activeTabOrigin: EditorTab['origin'] | null
-  activeTemplateId: string | null
+  onShowEditor: (tabId: string) => void
+  onCloseTab: (tabId: string) => void
+  onCreateFreshDocument: () => void
   onToggleSurface: (surface: 'templates' | 'lexicons') => void
   onShowDocumentDialog: () => void
-  onUndo: () => void
-  onRedo: () => void
+  onToggleGroupBinder: () => void
+  onToggleContentPicker: () => void
   onImportDdl: () => void
   onReopenLastClosedTab: () => void
   onPrinterChange: (devicePath: string) => void
@@ -36,6 +40,7 @@ type WorkspaceTopbarProps = {
   onSaveCurrentTemplate: () => void
   onSaveAsTemplate: () => void
   onShowExportDialog: () => void
+  onShowPrintPreview: () => void
   onPrintCurrent: () => void
   onRequestAppClose: () => void
 }
@@ -45,11 +50,14 @@ export function WorkspaceTopbar({
   activeSurface,
   showDocumentDialog,
   hasActiveTab,
-  status,
-  history,
+  tabs,
+  activeTabId,
+  isTabDirty,
   recentClosedTabsCount,
+  bindableSelectedCount,
+  contentPickerOpen,
+  groupBinderOpen,
   appState,
-  activeDocumentName,
   activeTabDirty,
   printerDevicePath,
   currentPrinter,
@@ -57,12 +65,13 @@ export function WorkspaceTopbar({
   saving,
   printing,
   exporting,
-  activeTabOrigin,
-  activeTemplateId,
+  onShowEditor,
+  onCloseTab,
+  onCreateFreshDocument,
   onToggleSurface,
   onShowDocumentDialog,
-  onUndo,
-  onRedo,
+  onToggleGroupBinder,
+  onToggleContentPicker,
   onImportDdl,
   onReopenLastClosedTab,
   onPrinterChange,
@@ -70,14 +79,18 @@ export function WorkspaceTopbar({
   onSaveCurrentTemplate,
   onSaveAsTemplate,
   onShowExportDialog,
+  onShowPrintPreview,
   onPrintCurrent,
   onRequestAppClose,
 }: WorkspaceTopbarProps) {
-  const sendWindowDrag = (event: ReactMouseEvent<HTMLElement>) => {
-    event.preventDefault()
+  const pendingDragCleanupRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => () => pendingDragCleanupRef.current?.(), [])
+
+  const sendWindowDrag = (screenX: number, screenY: number) => {
     sendWindowChromeCommand('drag', {
-      screenX: event.screenX,
-      screenY: event.screenY,
+      screenX,
+      screenY,
     })
   }
 
@@ -91,17 +104,42 @@ export function WorkspaceTopbar({
 
   const handleDragRegionMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
     if (event.button === 0) {
-      sendWindowDrag(event)
-    }
+      event.preventDefault()
+      pendingDragCleanupRef.current?.()
 
-    if (event.button === 2) {
-      sendSystemMenu(event)
+      const startX = event.screenX
+      const startY = event.screenY
+      const dragThreshold = 4
+
+      const cleanup = () => {
+        window.removeEventListener('mousemove', handleMouseMove)
+        window.removeEventListener('mouseup', cleanup)
+        pendingDragCleanupRef.current = null
+      }
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const deltaX = Math.abs(moveEvent.screenX - startX)
+        const deltaY = Math.abs(moveEvent.screenY - startY)
+        if (deltaX < dragThreshold && deltaY < dragThreshold) {
+          return
+        }
+
+        cleanup()
+        sendWindowDrag(moveEvent.screenX, moveEvent.screenY)
+      }
+
+      pendingDragCleanupRef.current = cleanup
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', cleanup)
     }
   }
 
-  const handleTopbarDragStart = (event: React.DragEvent<HTMLElement>) => {
+  const handleTopbarDragStart = (event: ReactDragEvent<HTMLElement>) => {
     event.preventDefault()
   }
+
+  const activePrinterName = currentPrinter?.displayName ?? appState?.printers[0]?.displayName ?? '未发现打印机'
+  const printerStatusLabel = currentPrinter?.isAvailable ? '在线' : '离线'
 
   return (
     <header className={clsx('topbar', windowIsMaximized ? 'window-maximized' : 'window-normal')} onDragStart={handleTopbarDragStart}>
@@ -116,31 +154,61 @@ export function WorkspaceTopbar({
         >
           <div className="title-block">
             <span className="product-mark">YiboLabel</span>
-            <div className="title-stack">
-              <div className="title-heading">
-                <h1>YiboLabel</h1>
-                {appState?.appVersion ? <span className="workspace-version">v{appState.appVersion}</span> : null}
-              </div>
-              <p className="status" title={status}>{status}</p>
-              {hasActiveTab ? (
-                <div className="workspace-badges">
-                  <span className={clsx('workspace-badge', activeTemplateId ? 'template' : 'draft')}>
-                    {activeTabOrigin ? getTabKindLabel({ origin: activeTabOrigin, templateId: activeTemplateId }) : '未绑定草稿'}
-                  </span>
-                  <span className={clsx('workspace-badge', activeTabDirty ? 'dirty' : 'saved')}>
-                    {activeTabDirty ? '未保存修改' : '已保存'}
-                  </span>
-                  <span className="workspace-document-name" title={activeDocumentName}>
-                    {activeDocumentName}
-                  </span>
-                </div>
-              ) : null}
-            </div>
+            <h1>YiboLabel</h1>
+            {appState?.appVersion ? <span className="workspace-version">v{appState.appVersion}</span> : null}
           </div>
         </div>
-        <div
-          className="topbar-drag-region"
-        />
+        <div className="title-tab-strip" aria-label="打开的标签页">
+          {tabs.map((tab) => {
+            const tabDirty = isTabDirty(tab)
+            const tabName = getTabDisplayName(tab)
+            const tabTitle = `${tabName} · ${getTabKindLabel(tab)}`
+            return (
+              <div key={tab.id} className={clsx('title-tab', activeSurface === 'editor' && activeTabId === tab.id && 'active', tabDirty && 'dirty')}>
+                <button
+                  className="title-tab-trigger"
+                  type="button"
+                  title={tabTitle}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                  onContextMenu={(event) => event.stopPropagation()}
+                  onClick={() => onShowEditor(tab.id)}
+                  onAuxClick={(event) => {
+                    if (event.button === 1) {
+                      onCloseTab(tab.id)
+                    }
+                  }}
+                >
+                  <span className="title-tab-state" aria-label={tabDirty ? '有未保存修改' : '已保存'} />
+                  <span>{tabName}</span>
+                </button>
+                <button
+                  className="title-tab-close"
+                  type="button"
+                  aria-label={`关闭 ${tabName}`}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                  onContextMenu={(event) => event.stopPropagation()}
+                  onClick={() => onCloseTab(tab.id)}
+                >
+                  ×
+                </button>
+              </div>
+            )
+          })}
+          <button
+            className="title-tab-new"
+            type="button"
+            onMouseDown={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.stopPropagation()}
+            onClick={onCreateFreshDocument}
+            title="新建标签"
+            aria-label="新建标签"
+          >
+            <FilePlus2 size={14} />
+          </button>
+        </div>
         <div
           className="window-controls"
           aria-label="窗口控制"
@@ -166,71 +234,86 @@ export function WorkspaceTopbar({
         </div>
       </div>
       <div className="topbar-actions command-bar" aria-label="工作区操作">
-        <button className={clsx('ghost-button compact-button topbar-action-secondary', activeSurface === 'templates' && 'active')} onClick={() => onToggleSurface('templates')}>
-          模板库
-        </button>
-        <button className={clsx('ghost-button compact-button topbar-action-secondary', activeSurface === 'lexicons' && 'active')} onClick={() => onToggleSurface('lexicons')}>
-          <BookOpen size={14} />
-          词库
-        </button>
-        <button className={clsx('ghost-button compact-button topbar-action-secondary', showDocumentDialog && 'active')} onClick={onShowDocumentDialog} disabled={!hasActiveTab}>
-          文档与打印
-        </button>
-        <button className="ghost-button topbar-action-secondary" onClick={onUndo} disabled={!hasActiveTab || history.past.length === 0}>
-          撤销
-        </button>
-        <button className="ghost-button topbar-action-secondary" onClick={onRedo} disabled={!hasActiveTab || history.future.length === 0}>
-          重做
-        </button>
-        <button className="ghost-button topbar-action-secondary" onClick={onImportDdl}>
-          <Upload size={16} />
-          导入为草稿
-        </button>
-        <button className="ghost-button compact-button topbar-action-secondary" onClick={onReopenLastClosedTab} disabled={recentClosedTabsCount === 0}>
-          <RotateCcw size={14} />
-          恢复关闭
-        </button>
-        <div className={clsx('topbar-printer', currentPrinter?.isAvailable ? 'online' : 'offline')}>
-          <span className="printer-status-dot" aria-hidden="true" />
-          <label>
-            <span>打印机</span>
-            <select
-              aria-label="选择打印机"
-              value={printerDevicePath}
-              onChange={(event) => onPrinterChange(event.target.value)}
-              disabled={!hasActiveTab || !appState?.printers.length}
-            >
-              {appState?.printers.length ? (
-                appState.printers.map((printer) => (
-                  <option key={printer.id} value={printer.devicePath}>
-                    {printer.isAvailable ? '在线' : '离线'} · {printer.displayName}
-                  </option>
-                ))
-              ) : (
-                <option value="">未发现打印机</option>
-              )}
-            </select>
-          </label>
-          <button className="inline-icon-button" type="button" onClick={onRefreshPrinters} disabled={refreshingPrinters} title={currentPrinter?.statusMessage ?? '刷新打印机状态'} aria-label="刷新打印机状态">
-            <RefreshCw size={14} className={refreshingPrinters ? 'is-spinning' : undefined} />
+        <div className="toolbar-group toolbar-navigation">
+          <button className={clsx('special-tool-button compact-button topbar-action-secondary', activeSurface === 'templates' && 'active')} onClick={() => onToggleSurface('templates')}>
+            模板
+          </button>
+          <button className={clsx('special-tool-button compact-button topbar-action-secondary', activeSurface === 'lexicons' && 'active')} onClick={() => onToggleSurface('lexicons')}>
+            <BookOpen size={14} />
+            词库
           </button>
         </div>
-        <button className="action-button topbar-action-primary" onClick={onSaveCurrentTemplate} disabled={!hasActiveTab || saving}>
-          <Save size={16} />
-          {saving ? '保存中...' : '保存'}
-        </button>
-        <button className="ghost-button topbar-action-primary" onClick={onSaveAsTemplate} disabled={!hasActiveTab || saving}>
-          <Save size={16} />
-          另存为模板
-        </button>
-        <button className="ghost-button topbar-action-primary" onClick={onShowExportDialog} disabled={!hasActiveTab || exporting}>
-          <Download size={16} />
-          {exporting ? '导出中...' : '导出'}
-        </button>
-        <button className="print-button topbar-action-primary" onClick={onPrintCurrent} disabled={!hasActiveTab || printing || !currentPrinter?.isAvailable} title={currentPrinter?.isAvailable ? undefined : currentPrinter?.statusMessage ?? '没有可用打印机'}>
-          <Printer size={16} />
-          {printing ? '打印中...' : '立即打印'}
-        </button>
+        <div className="toolbar-group toolbar-history">
+          <button className={clsx('special-tool-button topbar-action-secondary', groupBinderOpen && 'active')} onClick={onToggleGroupBinder} disabled={bindableSelectedCount === 0}>
+            绑定
+          </button>
+          <button className={clsx('special-tool-button topbar-action-secondary', contentPickerOpen && 'active')} onClick={onToggleContentPicker} disabled={bindableSelectedCount !== 1}>
+            候选
+          </button>
+        </div>
+        <div className="toolbar-group toolbar-output">
+          <button className={clsx('ghost-button topbar-action-primary save-button', activeTabDirty && 'dirty')} onClick={onSaveCurrentTemplate} disabled={!hasActiveTab || saving}>
+            <Save size={16} />
+            {saving ? '保存中...' : '保存'}
+          </button>
+          <button className="ghost-button topbar-action-primary" onClick={onSaveAsTemplate} disabled={!hasActiveTab || saving}>
+            <Save size={16} />
+            另存
+          </button>
+          <button className="ghost-button topbar-action-primary" onClick={onShowExportDialog} disabled={!hasActiveTab || exporting}>
+            <Download size={16} />
+            {exporting ? '导出中...' : '导出'}
+          </button>
+        </div>
+        <div className="toolbar-group toolbar-entry">
+          <button className="ghost-button topbar-action-secondary low-priority-button" onClick={onImportDdl} title="导入为草稿">
+            <Upload size={16} />
+            <span className="button-label">导入</span>
+          </button>
+          <button className="ghost-button compact-button topbar-action-secondary low-priority-button" onClick={onReopenLastClosedTab} disabled={recentClosedTabsCount === 0} title="恢复关闭标签">
+            <RotateCcw size={14} />
+            <span className="button-label">恢复</span>
+          </button>
+        </div>
+        <div className="toolbar-spacer" aria-hidden="true" />
+        <div className="toolbar-group toolbar-print">
+          <div className={clsx('topbar-printer', currentPrinter?.isAvailable ? 'online' : 'offline')} title={currentPrinter?.statusMessage ?? `${printerStatusLabel} · ${activePrinterName}`}>
+            <span className="printer-status-dot" aria-hidden="true" />
+            <label>
+              <span className="visually-hidden">打印机</span>
+              <select
+                aria-label="选择打印机"
+                value={printerDevicePath}
+                onChange={(event) => onPrinterChange(event.target.value)}
+                disabled={!hasActiveTab || !appState?.printers.length}
+              >
+                {appState?.printers.length ? (
+                  appState.printers.map((printer) => (
+                    <option key={printer.id} value={printer.devicePath}>
+                      {printer.isAvailable ? '在线' : '离线'} · {printer.displayName}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">未发现打印机</option>
+                )}
+              </select>
+            </label>
+            <button className="inline-icon-button" type="button" onClick={onRefreshPrinters} disabled={refreshingPrinters} title={currentPrinter?.statusMessage ?? '刷新打印机状态'} aria-label="刷新打印机状态">
+              <RefreshCw size={14} className={refreshingPrinters ? 'is-spinning' : undefined} />
+            </button>
+          </div>
+          <button className={clsx('ghost-button compact-button topbar-action-primary layout-button', showDocumentDialog && 'active')} onClick={onShowDocumentDialog} disabled={!hasActiveTab}>
+            页面布局
+          </button>
+          <button className="ghost-button topbar-action-primary preview-button" onClick={onShowPrintPreview} disabled={!hasActiveTab} title="预览页面将在后续版本开放">
+            <Eye size={16} />
+            预览
+          </button>
+          <button className="print-button topbar-action-primary" onClick={onPrintCurrent} disabled={!hasActiveTab || printing || !currentPrinter?.isAvailable} title={currentPrinter?.isAvailable ? undefined : currentPrinter?.statusMessage ?? '没有可用打印机'}>
+            <Printer size={16} />
+            {printing ? '打印中...' : '立即打印'}
+          </button>
+        </div>
       </div>
     </header>
   )

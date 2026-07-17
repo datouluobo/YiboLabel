@@ -200,6 +200,7 @@ async function renderPdfElement(element: LabelElement, labelDocument: LabelDocum
 function renderPdfText(element: TextElement, width: number, height: number) {
   const fontSize = Math.max(1, element.fontSize)
   const fontWeight = element.bold ? 700 : 500
+  const fontStyle = element.italic ? 'italic' : 'normal'
   const estimatedWidth = measurePdfTextWidth(element.text, fontSize, fontWeight, element.fontFamily)
   const fitScale = clamp(width / Math.max(1, estimatedWidth), 0.55, 1)
   const scaledWidth = estimatedWidth * fitScale
@@ -209,7 +210,7 @@ function renderPdfText(element: TextElement, width: number, height: number) {
       ? (width - scaledWidth) / 2
       : 0
   const y = Math.max(0, height - fontSize * 0.92)
-  return renderPdfTextRuns(element.text || ' ', fontSize, fontWeight, element.fontFamily, x, y, fitScale)
+  return renderPdfTextRuns(element.text || ' ', fontSize, fontWeight, element.fontFamily, x, y, fitScale, fontStyle)
 }
 
 function renderPdfBarcode(element: BarcodeElement, width: number, height: number) {
@@ -338,12 +339,15 @@ function renderPdfTextRuns(
   x: number,
   y: number,
   fitScale: number,
+  fontStyle = 'normal',
 ) {
   const runs = splitPdfTextRuns(text || ' ')
   const parts = [
     'BT',
     `${formatPdfNumber(fitScale * 100)} Tz`,
-    `${formatPdfNumber(x)} ${formatPdfNumber(y)} Td`,
+    fontStyle === 'italic'
+      ? `1 0 0.22 1 ${formatPdfNumber(x)} ${formatPdfNumber(y)} Tm`
+      : `${formatPdfNumber(x)} ${formatPdfNumber(y)} Td`,
   ]
   let activeFont = ''
 
@@ -571,13 +575,14 @@ function renderTextElement(
 ) {
   const fontSizePx = Math.max(12, pointsToMm(element.fontSize) * pixelsPerMm)
   const fontWeight = element.bold ? 700 : 500
+  const fontStyle = element.italic ? 'italic' : 'normal'
   const fontFamily = buildFontFamily(element.fontFamily)
   const text = element.text || ''
   const availableWidth = Math.max(1, width - 4)
 
   context.fillStyle = '#18222f'
   context.textBaseline = 'top'
-  context.font = `${fontWeight} ${fontSizePx}px ${fontFamily}`
+  context.font = `${fontStyle} ${fontWeight} ${fontSizePx}px ${fontFamily}`
   const measuredWidth = context.measureText(text || ' ').width
   const fitScale = clamp(availableWidth / Math.max(1, measuredWidth), 0.55, 1)
   const textX = element.align === 'right'

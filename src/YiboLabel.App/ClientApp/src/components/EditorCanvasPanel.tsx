@@ -1,9 +1,7 @@
-import { FilePlus2, RotateCcw, Upload } from 'lucide-react'
+import { CircleHelp, FilePlus2, RotateCcw, Upload } from 'lucide-react'
 import clsx from 'clsx'
 import type { PointerEvent as ReactPointerEvent, RefObject, WheelEvent as ReactWheelEvent } from 'react'
-import { getTabKindLabel } from '../domain/editorTabs'
 import type { Bounds, RulerTick, SnapLine } from '../domain/editorGeometry'
-import { isLexiconEnabledElement } from '../domain/labelDocument'
 import type { EditorTab } from '../domain/workspace'
 import { ElementPreview } from './ElementInspector'
 import type { LabelDocument, LabelElement } from '../types'
@@ -13,14 +11,10 @@ type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type EditorCanvasPanelProps = {
   hasActiveTab: boolean
   labelDocument: LabelDocument
-  activeTabOrigin: EditorTab['origin'] | null
   activeTemplateId: string | null
-  activeTabDirty: boolean
+  status: string
+  history: EditorTab['history']
   selectedElementIds: string[]
-  visibleElementsCount: number
-  bindableSelectedCount: number
-  contentPickerOpen: boolean
-  groupBinderOpen: boolean
   exporting: boolean
   canvasScale: number
   horizontalRulerTicks: RulerTick[]
@@ -33,8 +27,8 @@ type EditorCanvasPanelProps = {
   snapLines: SnapLine[]
   marqueeBounds: Bounds | null
   recentClosedTabsCount: number
-  onToggleGroupBinder: () => void
-  onToggleContentPicker: () => void
+  onUndo: () => void
+  onRedo: () => void
   onDuplicateSelected: () => void
   onDeleteSelected: () => void
   onCanvasWrapPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void
@@ -51,14 +45,10 @@ type EditorCanvasPanelProps = {
 export function EditorCanvasPanel({
   hasActiveTab,
   labelDocument,
-  activeTabOrigin,
   activeTemplateId,
-  activeTabDirty,
+  status,
+  history,
   selectedElementIds,
-  visibleElementsCount,
-  bindableSelectedCount,
-  contentPickerOpen,
-  groupBinderOpen,
   exporting,
   canvasScale,
   horizontalRulerTicks,
@@ -71,8 +61,8 @@ export function EditorCanvasPanel({
   snapLines,
   marqueeBounds,
   recentClosedTabsCount,
-  onToggleGroupBinder,
-  onToggleContentPicker,
+  onUndo,
+  onRedo,
   onDuplicateSelected,
   onDeleteSelected,
   onCanvasWrapPointerDown,
@@ -90,43 +80,30 @@ export function EditorCanvasPanel({
       {hasActiveTab ? (
         <>
           <div className="canvas-toolbar canvas-toolbar-compact">
-            <div className="canvas-toolbar-group">
-              <div className="document-state">
-                <span className={clsx('document-state-badge', activeTemplateId ? 'template' : 'draft')}>
-                  {activeTabOrigin ? getTabKindLabel({ origin: activeTabOrigin, templateId: activeTemplateId }) : '未绑定草稿'}
-                </span>
-                <span className={clsx('document-state-badge', activeTabDirty ? 'dirty' : 'saved')}>
-                  {activeTabDirty ? '未保存修改' : '已保存'}
-                </span>
-              </div>
+            <div className="canvas-toolbar-notice" title={status}>
+              <span className={clsx('canvas-toolbar-notice-dot', activeTemplateId ? 'template' : 'draft')} aria-hidden="true" />
+              <span>{status}</span>
+            </div>
+            <div className="canvas-toolbar-spacer" aria-hidden="true" />
+            <div className="canvas-toolbar-group canvas-toolbar-selection">
               <button className="mini-button" disabled={selectedElementIds.length === 0} onClick={onDuplicateSelected}>
-                复制所选
+                复制
               </button>
               <button className="mini-button" disabled={selectedElementIds.length === 0} onClick={onDeleteSelected}>
-                删除所选
-              </button>
-              <button className={clsx('mini-button', groupBinderOpen && 'active')} disabled={bindableSelectedCount === 0} onClick={onToggleGroupBinder}>
-                分组绑定
-              </button>
-              <button className={clsx('mini-button', contentPickerOpen && 'active')} disabled={!isLexiconEnabledElement(selectedElement)} onClick={onToggleContentPicker}>
-                内容候选
+                删除
               </button>
             </div>
-            <div className="canvas-metrics">
-              <div>
-                <span>元素数</span>
-                <strong>{labelDocument.elements.length}</strong>
-              </div>
-              <div>
-                <span>选中元素</span>
-                <strong>{selectedElementIds.length}</strong>
-              </div>
-              <div>
-                <span>可见元素</span>
-                <strong>{visibleElementsCount}</strong>
-              </div>
+            <div className="canvas-toolbar-group canvas-toolbar-history">
+              <button className="mini-button" onClick={onUndo} disabled={history.past.length === 0}>
+                撤销
+              </button>
+              <button className="mini-button" onClick={onRedo} disabled={history.future.length === 0}>
+                重做
+              </button>
             </div>
-            <p className="canvas-toolbar-tip">Ctrl 多选，Alt 选下层元素，方向键微调</p>
+            <span className="panel-help toolbar-help" title="Ctrl 多选，Alt 选下层元素，方向键微调" aria-label="画布操作说明">
+              <CircleHelp size={13} />
+            </span>
           </div>
 
           <div ref={canvasWrapRef} className="canvas-wrap" onPointerDown={onCanvasWrapPointerDown} onWheel={onCanvasWheel}>

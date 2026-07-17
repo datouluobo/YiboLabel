@@ -74,6 +74,7 @@ export interface TextElement extends BaseElement {
   fontSize: number
   fontFamily: string
   bold: boolean
+  italic: boolean
   align: 'left' | 'center' | 'right'
 }
 

@@ -31,6 +31,11 @@ internal sealed class MainForm : Form
     private const int WmSyscommand = 0x112;
     private const int WmNchittest = 0x84;
     private const int WmNclbuttondown = 0xA1;
+    private const int WmNclbuttondblclk = 0xA3;
+    private const uint SystemCommandMask = 0xFFF0;
+    private const int DwmWindowCornerPreferenceAttribute = 33;
+    private const int DwmWindowCornerPreferenceDoNotRound = 1;
+    private const int DwmWindowCornerPreferenceRound = 2;
     private const int MfBycommand = 0x0;
     private const int MfGrayED = 0x1;
     private const int MfEnabled = 0x0;
@@ -81,7 +86,7 @@ internal sealed class MainForm : Form
         Width = 1600;
         Height = 980;
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1200, 760);
+        MinimumSize = new Size(1640, 760);
         FormBorderStyle = FormBorderStyle.None;
         BackColor = Color.FromArgb(243, 247, 252);
         SetStyle(ControlStyles.ResizeRedraw, true);
@@ -652,6 +657,31 @@ internal sealed class MainForm : Form
             return;
         }
 
+        if (message.Msg == WmNclbuttondblclk)
+        {
+            return;
+        }
+
+        if (message.Msg == WmSyscommand)
+        {
+            var command = (uint)message.WParam.ToInt64() & SystemCommandMask;
+            if (command == ScMaximize)
+            {
+                if (!isPseudoMaximized)
+                {
+                    TogglePseudoMaximize();
+                }
+
+                return;
+            }
+
+            if (command == ScRestore && isPseudoMaximized)
+            {
+                TogglePseudoMaximize();
+                return;
+            }
+        }
+
         if (message.Msg == WmNchittest)
         {
             base.WndProc(ref message);
@@ -735,6 +765,7 @@ internal sealed class MainForm : Form
         {
             isPseudoMaximized = false;
             Bounds = restoreBoundsBeforeMaximize;
+            ApplyDesktopWindowEffects();
             SendWindowChromeState();
             return;
         }
@@ -746,9 +777,18 @@ internal sealed class MainForm : Form
     private void ApplyPseudoMaximize()
     {
         StartPosition = FormStartPosition.Manual;
+        WindowState = FormWindowState.Normal;
         isPseudoMaximized = true;
-        Bounds = Screen.FromHandle(Handle).WorkingArea;
+        Bounds = GetSafeMaximizedBounds(Screen.FromHandle(Handle));
+        ApplyDesktopWindowEffects();
         SendWindowChromeState();
+    }
+
+    private static Rectangle GetSafeMaximizedBounds(Screen screen)
+    {
+        var bounds = screen.WorkingArea;
+        bounds.Inflate(ResizeBorderThickness, ResizeBorderThickness);
+        return bounds;
     }
 
     private void ShowSystemMenu(JsonElement payload)
@@ -807,23 +847,31 @@ internal sealed class MainForm : Form
             return;
         }
 
-        const int DwmWindowCornerPreferenceAttribute = 33;
-        const int DwmWindowCornerPreferenceRound = 2;
-        var cornerPreference = DwmWindowCornerPreferenceRound;
+        var cornerPreference = isPseudoMaximized
+            ? DwmWindowCornerPreferenceDoNotRound
+            : DwmWindowCornerPreferenceRound;
         DwmSetWindowAttribute(Handle, DwmWindowCornerPreferenceAttribute, ref cornerPreference, sizeof(int));
 
-        var margins = new Margins
-        {
-            Left = 1,
-            Right = 1,
-            Top = 1,
-            Bottom = 1
-        };
+        var margins = isPseudoMaximized
+            ? new Margins()
+            : new Margins
+            {
+                Left = 1,
+                Right = 1,
+                Top = 1,
+                Bottom = 1
+            };
         DwmExtendFrameIntoClientArea(Handle, ref margins);
     }
 
     private void OnWindowBoundsChanged(object? sender, EventArgs eventArgs)
     {
+        if (WindowState == FormWindowState.Maximized)
+        {
+            ApplyPseudoMaximize();
+            return;
+        }
+
         if (!isPseudoMaximized)
         {
             restoreBoundsBeforeMaximize = Bounds;
