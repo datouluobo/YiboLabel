@@ -63,11 +63,38 @@ public sealed class TemplateStore
         return File.Exists(filePath) ? await LoadRecordAsync(filePath, cancellationToken) : null;
     }
 
+    public async Task<IReadOnlyDictionary<string, int>> GetSpecReferenceCountsAsync(CancellationToken cancellationToken)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var filePath in Directory.GetFiles(TemplateDirectory, "*.json", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                var record = await LoadRecordAsync(filePath, cancellationToken);
+                if (string.IsNullOrWhiteSpace(record.Document.SourceSpecId))
+                {
+                    continue;
+                }
+
+                counts.TryGetValue(record.Document.SourceSpecId, out var currentCount);
+                counts[record.Document.SourceSpecId] = currentCount + 1;
+            }
+            catch
+            {
+                // Ignore malformed template files so the library remains usable.
+            }
+        }
+
+        return counts;
+    }
+
     public async Task<LabelTemplateRecord> CreateAsync(SaveTemplateRequest request, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.Now;
         var normalizedName = request.Name.Trim();
         var id = CreateTemplateId();
+        var sortOrder = await GetNextSortOrderAsync(cancellationToken);
 
         while (File.Exists(GetTemplatePath(id)))
         {
@@ -79,6 +106,7 @@ public sealed class TemplateStore
             Id = id,
             SchemaVersion = CurrentSchemaVersion,
             Name = normalizedName,
+            SortOrder = sortOrder,
             CreatedAt = now,
             UpdatedAt = now,
             Document = request.Document.WithName(normalizedName)
@@ -102,6 +130,7 @@ public sealed class TemplateStore
             Id = existing.Id,
             SchemaVersion = CurrentSchemaVersion,
             Name = normalizedName,
+            SortOrder = existing.SortOrder,
             CreatedAt = existing.CreatedAt,
             UpdatedAt = DateTimeOffset.Now,
             Document = request.Document.WithName(normalizedName)
@@ -125,6 +154,7 @@ public sealed class TemplateStore
             Id = existing.Id,
             SchemaVersion = CurrentSchemaVersion,
             Name = normalizedName,
+            SortOrder = existing.SortOrder,
             CreatedAt = existing.CreatedAt,
             UpdatedAt = DateTimeOffset.Now,
             Document = existing.Document.WithName(normalizedName)
@@ -147,6 +177,64 @@ public sealed class TemplateStore
             Name = string.IsNullOrWhiteSpace(newName) ? $"{existing.Name} 副本" : newName.Trim(),
             Document = existing.Document.WithName(string.IsNullOrWhiteSpace(newName) ? $"{existing.Name} 副本" : newName.Trim())
         }, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<LabelTemplateSummary>?> MoveAsync(string id, MoveTemplateRequest request, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request.Placement, "before", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(request.Placement, "after", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var records = await LoadAllRecordsAsync(cancellationToken);
+        var ordered = OrderForDisplay(records).ToList();
+        var movingIndex = ordered.FindIndex(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+        var anchorIndex = ordered.FindIndex(item => string.Equals(item.Id, request.AnchorId, StringComparison.OrdinalIgnoreCase));
+        if (movingIndex < 0 || anchorIndex < 0 || movingIndex == anchorIndex)
+        {
+            return null;
+        }
+
+        var moving = ordered[movingIndex];
+        ordered.RemoveAt(movingIndex);
+
+        var nextAnchorIndex = ordered.FindIndex(item => string.Equals(item.Id, request.AnchorId, StringComparison.OrdinalIgnoreCase));
+        var insertIndex = string.Equals(request.Placement, "after", StringComparison.OrdinalIgnoreCase)
+            ? nextAnchorIndex + 1
+            : nextAnchorIndex;
+        ordered.Insert(Math.Clamp(insertIndex, 0, ordered.Count), moving);
+
+        var changedRecords = new List<LabelTemplateRecord>();
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            var record = ordered[index];
+            var nextSortOrder = index + 1;
+            if (record.SortOrder == nextSortOrder)
+            {
+                continue;
+            }
+
+            var updated = new LabelTemplateRecord
+            {
+                Id = record.Id,
+                SchemaVersion = record.SchemaVersion,
+                Name = record.Name,
+                SortOrder = nextSortOrder,
+                CreatedAt = record.CreatedAt,
+                UpdatedAt = record.UpdatedAt,
+                Document = record.Document
+            };
+            changedRecords.Add(updated);
+            ordered[index] = updated;
+        }
+
+        foreach (var record in changedRecords)
+        {
+            await SaveRecordAsync(record, cancellationToken);
+        }
+
+        return ordered.Select(ToSummary).ToList();
     }
 
     public Task<bool> DeleteAsync(string id, CancellationToken cancellationToken)
@@ -178,13 +266,46 @@ public sealed class TemplateStore
     {
         return (sort ?? "updated-desc").ToLowerInvariant() switch
         {
+            "custom" => records.OrderBy(item => item.SortOrder).ThenByDescending(item => item.UpdatedAt),
             "name-asc" => records.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
             "name-desc" => records.OrderByDescending(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
             "created-asc" => records.OrderBy(item => item.CreatedAt),
             "created-desc" => records.OrderByDescending(item => item.CreatedAt),
             "updated-asc" => records.OrderBy(item => item.UpdatedAt),
-            _ => records.OrderByDescending(item => item.UpdatedAt)
+            _ => records.OrderBy(item => item.SortOrder).ThenByDescending(item => item.UpdatedAt)
         };
+    }
+
+    private async Task<int> GetNextSortOrderAsync(CancellationToken cancellationToken)
+    {
+        var records = await LoadAllRecordsAsync(cancellationToken);
+        return records.Count == 0 ? 1 : records.Max(item => item.SortOrder) + 1;
+    }
+
+    private async Task<List<LabelTemplateRecord>> LoadAllRecordsAsync(CancellationToken cancellationToken)
+    {
+        var records = new List<LabelTemplateRecord>();
+        foreach (var filePath in Directory.GetFiles(TemplateDirectory, "*.json", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                records.Add(await LoadRecordAsync(filePath, cancellationToken));
+            }
+            catch
+            {
+                // Ignore malformed template files so the library remains usable.
+            }
+        }
+
+        return records;
+    }
+
+    private static IEnumerable<LabelTemplateRecord> OrderForDisplay(IEnumerable<LabelTemplateRecord> records)
+    {
+        return records
+            .OrderBy(item => item.SortOrder <= 0 ? int.MaxValue : item.SortOrder)
+            .ThenByDescending(item => item.UpdatedAt)
+            .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase);
     }
 
     private async Task SaveRecordAsync(LabelTemplateRecord record, CancellationToken cancellationToken)
@@ -216,6 +337,7 @@ public sealed class TemplateStore
             SchemaVersion = CurrentSchemaVersion,
             Id = record.Id,
             Name = record.Name,
+            SortOrder = record.SortOrder,
             CreatedAt = record.CreatedAt,
             UpdatedAt = record.UpdatedAt,
             Document = record.Document.WithName(record.Name)
@@ -229,6 +351,7 @@ public sealed class TemplateStore
             Id = record.Id,
             SchemaVersion = record.SchemaVersion,
             Name = record.Name,
+            SortOrder = record.SortOrder,
             CreatedAt = record.CreatedAt,
             UpdatedAt = record.UpdatedAt,
             Document = record.Document.WithName(record.Name)
@@ -241,6 +364,7 @@ public sealed class TemplateStore
         {
             Id = record.Id,
             Name = record.Name,
+            SortOrder = record.SortOrder,
             CreatedAt = record.CreatedAt,
             UpdatedAt = record.UpdatedAt,
             WidthMm = record.Document.WidthMm,
@@ -362,6 +486,8 @@ file static class LabelDocumentExtensions
             Name = name,
             WidthMm = document.WidthMm,
             HeightMm = document.HeightMm,
+            SourceSpecId = document.SourceSpecId,
+            SourceSpecName = document.SourceSpecName,
             PrinterDevicePath = document.PrinterDevicePath,
             Copies = document.Copies,
             Darkness = document.Darkness,
@@ -370,6 +496,11 @@ file static class LabelDocumentExtensions
             PrintInvert = document.PrintInvert,
             PrintOffsetXMm = document.PrintOffsetXMm,
             PrintOffsetYMm = document.PrintOffsetYMm,
+            CalibrationPrinterDevicePath = document.CalibrationPrinterDevicePath,
+            CalibrationProfileId = document.CalibrationProfileId,
+            PrintCalibrationState = document.PrintCalibrationState,
+            PrintCalibrationLabel = document.PrintCalibrationLabel,
+            LastPrintCheckSignature = document.LastPrintCheckSignature,
             Elements = document.Elements
         };
     }
@@ -382,6 +513,8 @@ internal sealed class TemplateFileRecord
     public required string Id { get; init; }
 
     public required string Name { get; init; }
+
+    public int SortOrder { get; init; }
 
     public required DateTimeOffset CreatedAt { get; init; }
 

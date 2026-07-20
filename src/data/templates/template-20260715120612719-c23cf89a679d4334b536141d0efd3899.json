@@ -2,20 +2,33 @@
   "schemaVersion": 1,
   "id": "template-20260715120612719-c23cf89a679d4334b536141d0efd3899",
   "name": "\u7BA1\u7B8D19-29",
+  "sortOrder": 2,
   "createdAt": "2026-07-15T12:06:12.7189835+08:00",
   "updatedAt": "2026-07-15T12:06:12.7189835+08:00",
   "document": {
     "name": "\u7BA1\u7B8D19-29",
     "widthMm": 70,
     "heightMm": 50,
+    "sourceSpecId": null,
+    "sourceSpecName": null,
     "printerDevicePath": null,
     "copies": 1,
     "darkness": 8,
     "gapMm": 2,
+    "printRotation": 0,
+    "printInvert": false,
+    "printOffsetXMm": 0,
+    "printOffsetYMm": 0,
+    "calibrationPrinterDevicePath": null,
+    "calibrationProfileId": null,
+    "printCalibrationState": null,
+    "printCalibrationLabel": null,
+    "lastPrintCheckSignature": null,
     "elements": [
       {
         "text": "\u6B66\u6C49\u58F9\u535A\u5929\u4E0B\u673A\u7535\u6709\u9650\u516C\u53F8",
         "fontSize": 12,
+        "fontFamily": "Microsoft YaHei",
         "bold": false,
         "align": "left",
         "id": "a4d76dcb-2011-4022-8815-94a0875ccf78",
@@ -34,6 +47,7 @@
       {
         "text": "\u91C7\u8D2D\u5355\u53F7\uFF1A",
         "fontSize": 10,
+        "fontFamily": "Microsoft YaHei",
         "bold": false,
         "align": "left",
         "id": "1d521d2d-c195-4977-b9ee-f2cb381159ee",
@@ -55,6 +69,7 @@
         "showHumanReadable": true,
         "textPosition": "bottom",
         "humanReadableFontSize": 12,
+        "humanReadableFontFamily": "Microsoft YaHei",
         "id": "113736bb-e355-4ecc-ae71-d2833f2f6df1",
         "name": "DDL \u6761\u7801",
         "x": 20.900000000000002,
@@ -86,6 +101,7 @@
       {
         "text": "\u7269\u6599\u540D\u79F0\uFF1A",
         "fontSize": 10,
+        "fontFamily": "Microsoft YaHei",
         "bold": false,
         "align": "left",
         "id": "3d08b234-c229-4ee4-88c5-6ca62b1f5589",
@@ -104,6 +120,7 @@
       {
         "text": "\u7BA1\u7B8D",
         "fontSize": 9,
+        "fontFamily": "Microsoft YaHei",
         "bold": false,
         "align": "left",
         "id": "4ef8ba46-252d-4bcd-8738-e4dc2cf917f4",
@@ -137,6 +154,7 @@
       {
         "text": "\u7269\u6599\u89C4\u683C\uFF1A",
         "fontSize": 10,
+        "fontFamily": "Microsoft YaHei",
         "bold": false,
         "align": "left",
         "id": "042b7ae3-7dd7-4ab0-bf46-6f897316725f",
@@ -155,6 +173,7 @@
       {
         "text": "19-29mm",
         "fontSize": 9,
+        "fontFamily": "Microsoft YaHei",
         "bold": false,
         "align": "left",
         "id": "eb0505fa-136a-45d6-983e-a425cb6f5025",
@@ -188,6 +207,7 @@
       {
         "text": "\u7269\u6599\u6570\u91CF\uFF1A",
         "fontSize": 10,
+        "fontFamily": "Microsoft YaHei",
         "bold": false,
         "align": "left",
         "id": "c521c371-b6af-4b4f-b6c1-d06ddc0380b6",
@@ -206,6 +226,7 @@
       {
         "text": "200\u4E2A",
         "fontSize": 9,
+        "fontFamily": "Microsoft YaHei",
         "bold": false,
         "align": "left",
         "id": "3fc64620-aa7a-4579-8a4c-defe3dd53e6d",
@@ -239,6 +260,7 @@
       {
         "text": "\u7269\u6599\u7F16\u7801\uFF1A",
         "fontSize": 10,
+        "fontFamily": "Microsoft YaHei",
         "bold": false,
         "align": "left",
         "id": "84bcf014-686f-4b0c-b2ed-125f460750f1",
@@ -260,6 +282,7 @@
         "showHumanReadable": true,
         "textPosition": "bottom",
         "humanReadableFontSize": 12,
+        "humanReadableFontFamily": "Microsoft YaHei",
         "id": "6710341f-b0fd-4b26-b799-22a578467de8",
         "name": "DDL \u6761\u7801",
         "x": 25.6,

@@ -2,20 +2,28 @@
   "schemaVersion": 1,
   "id": "template-20260715120843459-9b0fab8608874569a26499dc7117cb85",
   "name": "\u7BA1\u7B8D21-44",
+  "sortOrder": 1,
   "createdAt": "2026-07-15T12:08:43.4598979+08:00",
-  "updatedAt": "2026-07-17T17:26:45.1600754+08:00",
+  "updatedAt": "2026-07-18T23:58:06.8363578+08:00",
   "document": {
     "name": "\u7BA1\u7B8D21-44",
     "widthMm": 70,
     "heightMm": 50,
+    "sourceSpecId": null,
+    "sourceSpecName": null,
     "printerDevicePath": null,
     "copies": 1,
     "darkness": 8,
     "gapMm": 2,
-    "printRotation": 90,
-    "printInvert": true,
+    "printRotation": 0,
+    "printInvert": false,
     "printOffsetXMm": 0,
     "printOffsetYMm": 0,
+    "calibrationPrinterDevicePath": "\\\\?\\usb#vid_28e9\u0026pid_0285#00000000011a#{a5dcbf10-6530-11d2-901f-00c04fb951ed}",
+    "calibrationProfileId": null,
+    "printCalibrationState": "unset",
+    "printCalibrationLabel": "\u672A\u8BBE\u7F6E",
+    "lastPrintCheckSignature": null,
     "elements": [
       {
         "text": "\u6B66\u6C49\u58F9\u535A\u5929\u4E0B\u673A\u7535\u6709\u9650\u516C\u53F8",
@@ -46,7 +54,7 @@
         "name": "DDL \u6587\u672C",
         "x": 3.1,
         "y": 9.1,
-        "width": 18.2,
+        "width": 18.1,
         "height": 5,
         "rotation": 0,
         "locked": false,
@@ -285,8 +293,11 @@
         "locked": false,
         "hidden": false,
         "zIndex": 14,
-        "lexiconGroupIds": [],
-        "defaultLexiconGroupId": null
+        "lexiconGroupIds": [
+          "shipping-codes",
+          "\u89C4\u683C-20260714104048481"
+        ],
+        "defaultLexiconGroupId": "shipping-codes"
       }
     ]
   }

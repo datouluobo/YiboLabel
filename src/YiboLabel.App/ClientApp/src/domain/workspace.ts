@@ -3,6 +3,7 @@ import { createId, normalizeDocument } from './labelDocument'
 
 export const historyLimit = 40
 export const workspaceStorageKey = 'yibolabel.workspace.v8'
+export type SidebarTab = 'elements' | 'lexicon' | 'templates'
 
 export type HistoryState = {
   past: LabelDocument[]
@@ -30,12 +31,14 @@ export type ClosedTabSnapshot = {
 }
 
 export type WorkspaceSnapshot = {
-  version: 9
+  version: 11
   activeTabId: string | null
   ui?: {
-    activeSurface: 'editor' | 'templates' | 'lexicons'
+    activeSurface: 'editor' | 'templates' | 'lexicons' | 'print-check'
     lastEditorTabId: string | null
-    showDocumentDialog: boolean
+    activeEditorPanel: 'inspector' | 'document-spec' | 'print-calibration'
+    sidebarTab?: SidebarTab
+    previewTemplateId?: string | null
   }
   tabs: Array<{
     id: string
@@ -109,13 +112,15 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
 
     const parsed = JSON.parse(raw) as
       | WorkspaceSnapshot
+      | (Omit<WorkspaceSnapshot, 'version'> & { version: 10 })
+      | (Omit<WorkspaceSnapshot, 'version'> & { version: 9; ui?: { activeSurface: 'editor' | 'templates' | 'lexicons'; lastEditorTabId: string | null; showDocumentDialog: boolean } })
       | (Omit<WorkspaceSnapshot, 'version'> & { version: 8 })
       | (Omit<WorkspaceSnapshot, 'version'> & { version: 7 })
     if (!parsed || !Array.isArray(parsed.tabs)) {
       return null
     }
 
-    if (parsed.version === 9) {
+    if (parsed.version === 11) {
       return {
         ...parsed,
         tabs: parsed.tabs.map((tab) => ({
@@ -125,21 +130,64 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
       }
     }
 
-    if (parsed.version === 8) {
+    if (parsed.version === 10) {
       return {
-        version: 9,
+        version: 11,
         activeTabId: parsed.activeTabId ?? null,
         tabs: parsed.tabs.map((tab) => ({
           ...tab,
           origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
         })),
-        ui: parsed.ui,
+        ui: {
+          activeSurface: parsed.ui?.activeSurface ?? 'editor',
+          lastEditorTabId: parsed.ui?.lastEditorTabId ?? parsed.activeTabId ?? null,
+          activeEditorPanel: parsed.ui?.activeEditorPanel ?? 'inspector',
+          sidebarTab: parsed.ui?.activeSurface === 'templates' ? 'templates' : 'elements',
+          previewTemplateId: null,
+        },
+      }
+    }
+
+    if (parsed.version === 9) {
+      return {
+        version: 11,
+        activeTabId: parsed.activeTabId ?? null,
+        tabs: parsed.tabs.map((tab) => ({
+          ...tab,
+          origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
+        })),
+        ui: {
+          activeSurface: parsed.ui?.activeSurface ?? 'editor',
+          lastEditorTabId: parsed.ui?.lastEditorTabId ?? parsed.activeTabId ?? null,
+          activeEditorPanel: parsed.ui?.showDocumentDialog ? 'document-spec' : 'inspector',
+          sidebarTab: parsed.ui?.activeSurface === 'templates' ? 'templates' : 'elements',
+          previewTemplateId: null,
+        },
+      }
+    }
+
+    if (parsed.version === 8) {
+      const legacyUi = parsed.ui as { activeSurface?: 'editor' | 'templates' | 'lexicons'; lastEditorTabId?: string | null; showDocumentDialog?: boolean } | undefined
+      return {
+        version: 11,
+        activeTabId: parsed.activeTabId ?? null,
+        tabs: parsed.tabs.map((tab) => ({
+          ...tab,
+          origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
+        })),
+        ui: {
+          activeSurface: legacyUi?.activeSurface ?? 'editor',
+          lastEditorTabId: legacyUi?.lastEditorTabId ?? parsed.activeTabId ?? null,
+          activeEditorPanel: legacyUi?.showDocumentDialog ? 'document-spec' : 'inspector',
+          sidebarTab: legacyUi?.activeSurface === 'templates' ? 'templates' : 'elements',
+          previewTemplateId: null,
+        },
       }
     }
 
     if (parsed.version === 7) {
       return {
-        version: 9,
+        version: 11,
         activeTabId: parsed.activeTabId ?? null,
         tabs: parsed.tabs.map((tab) => ({
           ...tab,
@@ -148,7 +196,9 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
         ui: {
           activeSurface: 'editor',
           lastEditorTabId: parsed.activeTabId ?? null,
-          showDocumentDialog: false,
+          activeEditorPanel: 'inspector',
+          sidebarTab: 'elements',
+          previewTemplateId: null,
         },
       }
     }

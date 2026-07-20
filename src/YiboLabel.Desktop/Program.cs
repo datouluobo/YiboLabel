@@ -83,6 +83,7 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         Text = $"YiboLabel {GetDesktopVersion()}";
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Width = 1600;
         Height = 980;
         StartPosition = FormStartPosition.CenterScreen;

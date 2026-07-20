@@ -27,6 +27,27 @@ Instead, YiboLabel should feel like a lightweight desktop tool that opens fast, 
 
 If a feature does not help complete the local label printing workflow, it should be treated as optional.
 
+## Core Workflow
+
+YiboLabel separates semi-one-time setup from per-print actions.
+
+Semi-one-time setup includes:
+
+- templates
+- lexicons
+- document spec
+- printer selection
+- print calibration
+
+Daily printing should stay on a short path:
+
+- open a template
+- update this print's content
+- adjust copies
+- print immediately
+
+`copies` belongs to the current output action, so it should stay near the fast print controls instead of being hidden in a settings dialog.
+
 ## Early Documents
 
 - [Brainstorm](E:/Program/YiboLabel/docs/brainstorm.md)

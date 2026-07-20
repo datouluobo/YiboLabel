@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from 'react'
@@ -19,30 +20,32 @@ import {
   deleteLexiconGroup as deleteLexiconGroupRequest,
   fetchLexiconGroups,
   fetchLexiconLibrary,
+  moveLexiconEntry as moveLexiconEntryRequest,
+  moveLexiconGroup as moveLexiconGroupRequest,
   renameLexiconGroup as renameLexiconGroupRequest,
   updateLexiconEntry as updateLexiconEntryRequest,
 } from './api/lexiconsApi'
 import { printDocument } from './api/printApi'
+import { createFullDataBackup, openDataDirectory, restoreDataBackup } from './api/dataManagementApi'
 import {
   createTemplate,
   deleteTemplate as deleteTemplateRequest,
   duplicateTemplate as duplicateTemplateRequest,
   fetchTemplate,
   fetchTemplates,
+  moveTemplate as moveTemplateRequest,
   renameTemplate as renameTemplateRequest,
   updateTemplate,
 } from './api/templatesApi'
 import { getErrorMessage } from './api/http'
-import { ContentPicker } from './components/ContentPicker'
-import { DocumentPrintDialog } from './components/DocumentPrintDialog'
 import { EditorCanvasPanel } from './components/EditorCanvasPanel'
-import { EditorSidebar } from './components/EditorSidebar'
 import { ElementInspector, MultiSelectionInspector } from './components/ElementInspector'
 import { ExportDialog, type ExportDialogOptions } from './components/ExportDialog'
-import { GroupBindingPanel } from './components/GroupBindingPanel'
 import { LexiconManager } from './components/LexiconManager'
 import { PendingSavesDialog } from './components/PendingSavesDialog'
-import { TemplateLibraryView } from './components/TemplateLibraryView'
+import { DocumentSpecPanel, PrintCalibrationPanel, PrintCheckSurface } from './components/PrintWorkflowPanels'
+import { TemplateEditorSidebar } from './components/TemplateEditorSidebar'
+import { TemplatePreviewPanel } from './components/TemplatePreviewPanel'
 import { UnsavedChangesDialog } from './components/UnsavedChangesDialog'
 import { WorkspaceTopbar } from './components/WorkspaceTopbar'
 import {
@@ -95,9 +98,11 @@ import {
   sortElementsByListOrder,
 } from './domain/labelDocument'
 import { renderLabelCanvasElementToDataUrl, renderLabelDocumentToDataUrl, renderLabelDocumentToPdfBase64 } from './domain/exportRenderer'
+import { buildPrintCheckReport, createPrintCheckSignature, type EditorPanelMode, type WorkspaceSurface } from './domain/printWorkflow'
 import {
   toTemplateSummary,
 } from './domain/templateMetadata'
+import type { LexiconActionRecord, LexiconActionSource } from './domain/lexiconActions'
 import {
   getTabDisplayName,
   historyLimit,
@@ -105,6 +110,7 @@ import {
   workspaceStorageKey,
   type ClosedTabSnapshot,
   type EditorTab,
+  type SidebarTab,
   type WorkspaceSnapshot,
 } from './domain/workspace'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -114,8 +120,18 @@ import {
   writeTextExportFile,
 } from './platform/exportBridge'
 import { sendWindowChromeCommand, subscribeWindowChromeMessages } from './platform/windowChrome'
+import {
+  createDocumentSpecPreset,
+  deleteDocumentSpecPreset,
+  fetchDocumentSpecPresets,
+  deletePrinterCalibration,
+  fetchPrinterCalibrations,
+  savePrinterCalibration,
+  updateDocumentSpecPreset,
+} from './api/printWorkflowApi'
 import type {
   AppStateResponse,
+  DocumentSpecPresetSummary,
   DuplicateTemplateRequest,
   ImageElement,
   LabelDocument,
@@ -126,6 +142,7 @@ import type {
   LexiconLibrary,
   LabelTemplateSummary,
   LexiconGroupSummary,
+  PrinterCalibrationRecord,
   RenameTemplateRequest,
 } from './types'
 
@@ -134,9 +151,6 @@ const emptySelectionIds: string[] = []
 const emptyHistoryState: EditorTab['history'] = { past: [], future: [] }
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
-type TemplateSort = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'created-desc' | 'created-asc'
-
-type WorkspaceSurface = 'editor' | 'templates' | 'lexicons'
 type LayerAction = 'front' | 'back' | 'forward' | 'backward'
 
 type MoveInteraction = {
@@ -186,30 +200,36 @@ type UnsavedDialogState = {
 export default function App() {
   const [appState, setAppState] = useState<AppStateResponse | null>(null)
   const [templates, setTemplates] = useState<LabelTemplateSummary[]>([])
+  const [documentSpecPresets, setDocumentSpecPresets] = useState<DocumentSpecPresetSummary[]>([])
+  const [printerCalibrationProfiles, setPrinterCalibrationProfiles] = useState<PrinterCalibrationRecord[]>([])
+  const [loadedCalibrationDevicePath, setLoadedCalibrationDevicePath] = useState<string | null>(null)
   const [templateQuery, setTemplateQuery] = useState('')
-  const [templateSort, setTemplateSort] = useState<TemplateSort>('updated-desc')
   const [lexiconGroups, setLexiconGroups] = useState<LexiconGroupSummary[]>([])
   const [lexiconLibrary, setLexiconLibrary] = useState<LexiconLibrary>({ schemaVersion: 1, lexicons: [] })
   const [activeLexiconId, setActiveLexiconId] = useState<string | null>(null)
   const [activeLexiconGroupId, setActiveLexiconGroupId] = useState<string | null>(null)
   const [lexiconQuery, setLexiconQuery] = useState('')
-  const [contentPickerOpen, setContentPickerOpen] = useState(false)
-  const [contentPickerPosition, setContentPickerPosition] = useState<Point>({ x: 560, y: 160 })
-  const [groupBinderOpen, setGroupBinderOpen] = useState(false)
-  const [groupBinderPosition, setGroupBinderPosition] = useState<Point>({ x: 520, y: 150 })
-  const [groupBinderQuery, setGroupBinderQuery] = useState('')
+  const [bindingOverlayEnabled, setBindingOverlayEnabled] = useState(false)
+  const [bindingOverlayScope, setBindingOverlayScope] = useState<'selected' | 'all'>('selected')
+  const [activeSidebarGroupId, setActiveSidebarGroupId] = useState<string | null>(null)
+  const [lastLexiconAction, setLastLexiconAction] = useState<LexiconActionRecord | null>(null)
   const [tabs, setTabs] = useState<EditorTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [activeSurface, setActiveSurface] = useState<WorkspaceSurface>('editor')
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('elements')
+  const [activeEditorPanel, setActiveEditorPanel] = useState<EditorPanelMode>('inspector')
+  const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null)
+  const [previewTemplateRecord, setPreviewTemplateRecord] = useState<LabelTemplateRecord | null>(null)
+  const [previewTemplateLoading, setPreviewTemplateLoading] = useState(false)
   const [lastEditorTabId, setLastEditorTabId] = useState<string | null>(null)
   const [recentClosedTabs, setRecentClosedTabs] = useState<ClosedTabSnapshot[]>([])
   const [status, setStatus] = useState('正在加载本地标签工作台...')
   const [saving, setSaving] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [refreshingPrinters, setRefreshingPrinters] = useState(false)
-  const [showDocumentDialog, setShowDocumentDialog] = useState(false)
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [dataManaging, setDataManaging] = useState(false)
   const [exportOptions, setExportOptions] = useState<ExportDialogOptions>({ format: 'pdf', pdfPaperMode: 'label' })
   const [unsavedDialog, setUnsavedDialog] = useState<UnsavedDialogState | null>(null)
   const [pendingSavesOpen, setPendingSavesOpen] = useState(false)
@@ -221,8 +241,14 @@ export default function App() {
   const [snapLines, setSnapLines] = useState<SnapLine[]>([])
   const [canvasViewportScale, setCanvasViewportScale] = useState(1)
   const [canvasUserZoom, setCanvasUserZoom] = useState(1)
+  const [inlineEditorState, setInlineEditorState] = useState<{
+    elementId: string
+    draft: string
+    initialValue: string
+  } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const ddlInputRef = useRef<HTMLInputElement | null>(null)
+  const backupInputRef = useRef<HTMLInputElement | null>(null)
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const canvasWrapRef = useRef<HTMLDivElement | null>(null)
   const tabsRef = useRef<EditorTab[]>([])
@@ -250,6 +276,12 @@ export default function App() {
   }, [tabs])
 
   useEffect(() => {
+    if (activeTabId && activeSurface === 'editor' && sidebarTab !== 'templates') {
+      setLastEditorTabId(activeTabId)
+    }
+  }, [activeSurface, activeTabId, sidebarTab])
+
+  useEffect(() => {
     const hasDirtyTabs = tabs.some((tab) => isTabDirty(tab))
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       if (allowImmediateCloseRef.current) {
@@ -275,12 +307,14 @@ export default function App() {
     }
 
     const snapshot: WorkspaceSnapshot = {
-      version: 9,
+      version: 11,
       activeTabId,
       ui: {
         activeSurface,
         lastEditorTabId,
-        showDocumentDialog: showDocumentDialog && hasActiveTab,
+        activeEditorPanel: hasActiveTab ? activeEditorPanel : 'inspector',
+        sidebarTab,
+        previewTemplateId,
       },
       tabs: tabs.map((tab) => ({
         id: tab.id,
@@ -294,7 +328,7 @@ export default function App() {
     }
 
     window.localStorage.setItem(workspaceStorageKey, JSON.stringify(snapshot))
-  }, [activeSurface, activeTabId, hasActiveTab, lastEditorTabId, showDocumentDialog, tabs])
+  }, [activeEditorPanel, activeSurface, activeTabId, hasActiveTab, lastEditorTabId, previewTemplateId, sidebarTab, tabs])
 
   const sortedElements = useMemo(() => (hasActiveTab ? sortElements(labelDocument.elements) : []), [hasActiveTab, labelDocument.elements])
   const visibleElements = useMemo(() => sortedElements.filter((element) => !element.hidden), [sortedElements])
@@ -304,6 +338,9 @@ export default function App() {
     [labelDocument.elements, selectedElementIds],
   )
   const selectedElement = selectedElements.length === 1 ? selectedElements[0] : null
+  const currentTabLexiconAction = lastLexiconAction && activeTabId && lastLexiconAction.tabId === activeTabId
+    ? lastLexiconAction
+    : null
   const bindableSelectedElements = useMemo(
     () => selectedElements.filter(isLexiconEnabledElement),
     [selectedElements],
@@ -312,6 +349,32 @@ export default function App() {
     const devicePath = labelDocument.printerDevicePath ?? appState?.printers[0]?.devicePath
     return appState?.printers.find((printer) => printer.devicePath === devicePath) ?? null
   }, [appState?.printers, labelDocument.printerDevicePath])
+  const activeSourcePreset = useMemo(
+    () => documentSpecPresets.find((preset) => preset.id === labelDocument.sourceSpecId) ?? null,
+    [documentSpecPresets, labelDocument.sourceSpecId],
+  )
+  const sourcePresetChanged = useMemo(
+    () =>
+      activeSourcePreset !== null
+      && (
+        activeSourcePreset.widthMm !== labelDocument.widthMm
+        || activeSourcePreset.heightMm !== labelDocument.heightMm
+        || activeSourcePreset.gapMm !== labelDocument.gapMm
+      ),
+    [activeSourcePreset, labelDocument.gapMm, labelDocument.heightMm, labelDocument.widthMm],
+  )
+  const activeTabDirty = activeTab ? isTabDirty(activeTab) : false
+  const printCheckReport = useMemo(
+    () =>
+      buildPrintCheckReport({
+        document: labelDocument,
+        currentPrinter,
+        activeTabDirty,
+        visibleElements,
+        overlapSummary: visibleOverlapSummary,
+      }),
+    [activeTabDirty, currentPrinter, labelDocument, visibleElements, visibleOverlapSummary],
+  )
   const openedTemplateState = useMemo(() => {
     const state = new Map<string, { openCount: number; current: boolean; dirty: boolean }>()
     for (const tab of tabs) {
@@ -328,36 +391,18 @@ export default function App() {
 
     return state
   }, [activeTabId, tabs])
+  const previewTemplateOpenState = useMemo(
+    () => (previewTemplateId ? openedTemplateState.get(previewTemplateId) ?? null : null),
+    [openedTemplateState, previewTemplateId],
+  )
   const visibleTemplates = useMemo(() => {
     const query = templateQuery.trim().toLowerCase()
-    const filtered = query.length === 0
+    return query.length === 0
       ? templates
       : templates.filter((template) =>
           template.name.toLowerCase().includes(query),
         )
-
-    const sorted = [...filtered]
-    sorted.sort((left, right) => {
-      if (templateSort === 'name-asc') {
-        return left.name.localeCompare(right.name, 'zh-CN')
-      }
-      if (templateSort === 'name-desc') {
-        return right.name.localeCompare(left.name, 'zh-CN')
-      }
-      if (templateSort === 'created-asc') {
-        return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
-      }
-      if (templateSort === 'created-desc') {
-        return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
-      }
-      if (templateSort === 'updated-asc') {
-        return new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime()
-      }
-
-      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
-    })
-    return sorted
-  }, [templateQuery, templateSort, templates])
+  }, [templateQuery, templates])
   const activeLexicon = useMemo(
     () => lexiconLibrary.lexicons.find((lexicon) => lexicon.id === activeLexiconId) ?? lexiconLibrary.lexicons[0] ?? null,
     [activeLexiconId, lexiconLibrary.lexicons],
@@ -382,15 +427,30 @@ export default function App() {
   const listOrderedElements = useMemo(() => sortElementsByListOrder(labelDocument.elements), [labelDocument.elements])
   const horizontalRulerTicks = useMemo(() => createRulerTicks(labelDocument.widthMm), [labelDocument.widthMm])
   const verticalRulerTicks = useMemo(() => createRulerTicks(labelDocument.heightMm), [labelDocument.heightMm])
-  const boundLexiconGroups = useMemo(() => {
-    if (!isLexiconEnabledElement(selectedElement)) {
+  const bindingOverlayElements = useMemo(() => {
+    if (!bindingOverlayEnabled) {
       return []
     }
 
-    const groupIds = new Set(selectedElement.lexiconGroupIds ?? [])
-    return lexiconGroups.filter((group) => groupIds.has(group.id))
-  }, [lexiconGroups, selectedElement])
-  const activeTabDirty = activeTab ? isTabDirty(activeTab) : false
+    const visibleGroupMap = new Map(lexiconGroups.map((group) => [group.id, group.name]))
+    const visibleTargets = bindingOverlayScope === 'selected'
+      ? labelDocument.elements.filter((element) => selectedElementIds.includes(element.id))
+      : labelDocument.elements
+
+    return visibleTargets
+      .filter(isLexiconEnabledElement)
+      .filter((element) => !element.hidden && (element.lexiconGroupIds?.length ?? 0) > 0)
+      .map((element) => {
+        const groupNames = (element.lexiconGroupIds ?? [])
+          .map((groupId) => visibleGroupMap.get(groupId))
+          .filter((name): name is string => Boolean(name))
+
+        return {
+          elementId: element.id,
+          names: groupNames,
+        }
+      })
+  }, [bindingOverlayEnabled, bindingOverlayScope, labelDocument.elements, lexiconGroups, selectedElementIds])
   const dirtyTabs = useMemo(() => tabs.filter((tab) => isTabDirty(tab)), [tabs])
   const pendingSaveItems = useMemo(
     () =>
@@ -403,10 +463,62 @@ export default function App() {
     [dirtyTabs],
   )
   const canvasScale = baseCanvasScale * canvasViewportScale * canvasUserZoom
+  const inlineEditingElement = useMemo(() => {
+    if (!inlineEditorState) {
+      return null
+    }
+
+    const element = labelDocument.elements.find((item) => item.id === inlineEditorState.elementId) ?? null
+    return isLexiconEnabledElement(element) ? element : null
+  }, [inlineEditorState, labelDocument.elements])
 
   useEffect(() => {
     void bootstrap()
   }, [])
+
+  useEffect(() => {
+    if (!previewTemplateId) {
+      setPreviewTemplateRecord(null)
+      setPreviewTemplateLoading(false)
+      return
+    }
+
+    const summary = templates.find((template) => template.id === previewTemplateId)
+    if (!summary) {
+      setPreviewTemplateId(null)
+      setPreviewTemplateRecord(null)
+      setPreviewTemplateLoading(false)
+      return
+    }
+
+    if (previewTemplateRecord?.id === previewTemplateId && previewTemplateRecord.updatedAt === summary.updatedAt) {
+      return
+    }
+
+    let cancelled = false
+    setPreviewTemplateLoading(true)
+    void fetchTemplate(previewTemplateId)
+      .then((record) => {
+        if (!cancelled) {
+          setPreviewTemplateRecord(record)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStatus(getErrorMessage(error))
+          setPreviewTemplateRecord(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPreviewTemplateLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [previewTemplateId, previewTemplateRecord?.id, previewTemplateRecord?.updatedAt, templates])
 
   useEffect(() => {
     const handleWheel = (event: WheelEvent) => {
@@ -419,21 +531,16 @@ export default function App() {
     return () => window.removeEventListener('wheel', handleWheel, { capture: true })
   }, [])
 
-  useEffect(
-    () => {
-      sendWindowChromeCommand('sync-state')
-      return subscribeWindowChromeMessages((message) => {
-        if (message.command === 'state-changed') {
-          setWindowIsMaximized(message.isMaximized)
-          return
-        }
+  useEffect(() => {
+    if (!inlineEditorState) {
+      return
+    }
 
-        setHostCloseRequestPending(true)
-        requestAppClose('host')
-      })
-    },
-    [dirtyTabs.length],
-  )
+    const element = labelDocument.elements.find((item) => item.id === inlineEditorState.elementId) ?? null
+    if (!isLexiconEnabledElement(element) || !selectedElementIds.includes(inlineEditorState.elementId)) {
+      setInlineEditorState(null)
+    }
+  }, [inlineEditorState, labelDocument.elements, selectedElementIds])
 
   const updateActiveTab = useCallback((mutator: (tab: EditorTab) => EditorTab) => {
     if (!activeTabId) {
@@ -497,48 +604,135 @@ export default function App() {
     applyDocument(mutator(documentRef.current), options)
   }, [applyDocument])
 
+  const templateExists = useCallback((templateId: string) => templates.some((template) => template.id === templateId), [templates])
+
+  const selectPreviewTemplate = useCallback((templateId: string | null) => {
+    setPreviewTemplateId(templateId)
+  }, [])
+
+  const restoreLastEditorTabOrBlank = useCallback(() => {
+    const targetId = lastEditorTabId ?? activeTabId ?? tabsRef.current[0]?.id ?? null
+    if (targetId) {
+      setActiveTabId(targetId)
+      setLastEditorTabId(targetId)
+    }
+  }, [activeTabId, lastEditorTabId])
+
+  const handleSidebarTabChange = useCallback((nextTab: SidebarTab) => {
+    if (nextTab === 'templates') {
+      if (activeTab?.origin === 'template' && activeTab.templateId && templateExists(activeTab.templateId)) {
+        setPreviewTemplateId(activeTab.templateId)
+      } else if (previewTemplateId && !templateExists(previewTemplateId)) {
+        setPreviewTemplateId(null)
+      }
+
+      setSidebarTab('templates')
+      setActiveSurface('editor')
+      setActiveEditorPanel('inspector')
+      return
+    }
+
+    if (sidebarTab === 'templates' && nextTab === 'elements') {
+      if (previewTemplateId && templateExists(previewTemplateId)) {
+        void loadTemplate(previewTemplateId, { forceSidebarTab: 'elements' })
+      } else {
+        restoreLastEditorTabOrBlank()
+      }
+    }
+
+    if (nextTab === 'lexicon') {
+      restoreLastEditorTabOrBlank()
+    }
+
+    setSidebarTab(nextTab)
+    setActiveSurface('editor')
+  }, [
+    activeTab,
+    loadTemplate,
+    previewTemplateId,
+    restoreLastEditorTabOrBlank,
+    sidebarTab,
+    templateExists,
+  ])
+
   function showEditor(tabId?: string | null) {
     const targetId = tabId ?? lastEditorTabId ?? activeTabId ?? tabsRef.current[0]?.id ?? null
     if (targetId) {
       setActiveTabId(targetId)
       setLastEditorTabId(targetId)
     }
+    setSidebarTab('elements')
     setActiveSurface('editor')
   }
 
-  function toggleSurface(surface: Exclude<WorkspaceSurface, 'editor'>) {
-    if (activeSurface === surface) {
-      showEditor()
+  function openDocumentSpecPanel() {
+    if (activeSurface === 'editor' && activeEditorPanel === 'document-spec') {
+      setActiveEditorPanel('inspector')
       return
     }
 
-    if (activeSurface === 'editor' && activeTabId) {
-      setLastEditorTabId(activeTabId)
-    }
-    setActiveSurface(surface)
+    showEditor()
+    setActiveEditorPanel('document-spec')
   }
 
-  function toggleLexiconGroupForSelection(groupId: string) {
-    if (bindableSelectedElements.length === 0) {
+  function openPrintCalibrationPanel() {
+    if (activeSurface === 'editor' && activeEditorPanel === 'print-calibration') {
+      setActiveEditorPanel('inspector')
       return
     }
 
-    const selectedIds = new Set(bindableSelectedElements.map((element) => element.id))
-    const allSelectedHaveGroup = bindableSelectedElements.every((element) => (element.lexiconGroupIds ?? []).includes(groupId))
+    showEditor()
+    setActiveEditorPanel('print-calibration')
+  }
+
+  function openPrintCheckSurface() {
+    if (!hasActiveTab) {
+      return
+    }
+
+    if (activeSurface === 'print-check') {
+      showEditor()
+      setActiveEditorPanel('inspector')
+      return
+    }
+
+    setActiveEditorPanel('inspector')
+    setActiveSurface('print-check')
+  }
+
+  function getLexiconActionElementName(element: LabelElement) {
+    return element.name ?? getDefaultElementName(element.type)
+  }
+
+  function getLexiconActionGroupName(groupId: string) {
+    return lexiconGroups.find((group) => group.id === groupId)?.name ?? '未命名分组'
+  }
+
+  function setElementGroupBinding(elementId: string, groupId: string, shouldBind: boolean, options: { activateGroup?: boolean } = {}) {
+    const { activateGroup = true } = options
+    const target = labelDocument.elements.find((element) => element.id === elementId) ?? null
+    if (!isLexiconEnabledElement(target)) {
+      return { ok: false as const, changed: false, target: null, groupName: getLexiconActionGroupName(groupId) }
+    }
+
+    const currentlyBound = (target.lexiconGroupIds ?? []).includes(groupId)
+    if (currentlyBound === shouldBind) {
+      return { ok: true as const, changed: false, target, groupName: getLexiconActionGroupName(groupId) }
+    }
+
+    const groupName = getLexiconActionGroupName(groupId)
 
     updateDocument((current) => ({
       ...current,
       elements: current.elements.map((element) => {
-        if (!selectedIds.has(element.id) || !isLexiconEnabledElement(element)) {
+        if (element.id !== elementId || !isLexiconEnabledElement(element)) {
           return element
         }
 
         const currentGroupIds = element.lexiconGroupIds ?? []
-        const nextGroupIds = allSelectedHaveGroup
-          ? currentGroupIds.filter((id) => id !== groupId)
-          : currentGroupIds.includes(groupId)
-            ? currentGroupIds
-            : [...currentGroupIds, groupId]
+        const nextGroupIds = shouldBind
+          ? [...new Set([...currentGroupIds, groupId])]
+          : currentGroupIds.filter((id) => id !== groupId)
 
         return {
           ...element,
@@ -547,29 +741,415 @@ export default function App() {
         } as LabelElement
       }),
     }))
+
+    if (activateGroup && !shouldBind && activeSidebarGroupId === groupId) {
+      setActiveSidebarGroupId(null)
+    }
+    if (activateGroup && shouldBind) {
+      setActiveSidebarGroupId(groupId)
+    }
+
+    return { ok: true as const, changed: true, target, groupName }
   }
 
-  function setSelectedElementDefaultLexiconGroup(groupId: string | null) {
-    if (!isLexiconEnabledElement(selectedElement)) {
+  function toggleLexiconGroupForElement(elementId: string, groupId: string) {
+    const target = labelDocument.elements.find((element) => element.id === elementId) ?? null
+    if (!isLexiconEnabledElement(target)) {
       return
     }
 
-    updateSelectedElement({
-      defaultLexiconGroupId: groupId || null,
-    } as Partial<LabelElement>)
-  }
-
-  function applySuggestionToSelectedElement(text: string) {
-    if (!isLexiconEnabledElement(selectedElement)) {
+    const currentlyBound = (target.lexiconGroupIds ?? []).includes(groupId)
+    if (currentlyBound) {
+      void unbindLexiconGroupFromElement(elementId, groupId, { source: 'popover' })
       return
     }
 
-    updateSelectedElement(createContentPatch(selectedElement, text))
+    void bindLexiconGroupToElement(elementId, groupId, { source: 'popover' })
+  }
+
+  function findLexiconGroupById(groupId: string) {
+    for (const lexicon of lexiconLibrary.lexicons) {
+      const group = lexicon.groups.find((item) => item.id === groupId)
+      if (group) {
+        return { lexicon, group }
+      }
+    }
+    return null
+  }
+
+  function findLexiconEntryById(groupId: string, entryId: string) {
+    const resolved = findLexiconGroupById(groupId)
+    if (!resolved) {
+      return null
+    }
+
+    const entry = resolved.group.entries.find((item) => item.id === entryId) ?? null
+    return entry ? { ...resolved, entry } : null
+  }
+
+  async function createSidebarLexiconGroup() {
+    const targetLexicon = lexiconLibrary.lexicons.find((lexicon) => lexicon.id === activeLexiconId) ?? lexiconLibrary.lexicons[0] ?? null
+    if (!targetLexicon) {
+      setStatus('词库尚未初始化。')
+      return
+    }
+
+    const name = window.prompt('分组名称', '新分组')?.trim()
+    if (!name) {
+      return
+    }
+
+    try {
+      const created = await createLexiconGroupRequest(targetLexicon.id, name)
+      await refreshLexiconGroups()
+      setActiveLexiconId(targetLexicon.id)
+      setActiveLexiconGroupId(created.id)
+      setActiveSidebarGroupId(created.id)
+      setStatus(`已创建分组：${created.name}`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function renameSidebarLexiconGroup(groupId: string) {
+    const resolved = findLexiconGroupById(groupId)
+    if (!resolved) {
+      setStatus('未找到要重命名的分组。')
+      return
+    }
+
+    const name = window.prompt('分组名称', resolved.group.name)?.trim()
+    if (!name || name === resolved.group.name) {
+      return
+    }
+
+    try {
+      const saved = await renameLexiconGroupRequest(resolved.lexicon.id, resolved.group.id, name)
+      await refreshLexiconGroups()
+      setActiveLexiconId(resolved.lexicon.id)
+      setActiveLexiconGroupId(saved.id)
+      setActiveSidebarGroupId(saved.id)
+      setStatus(`已重命名分组：${saved.name}`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function deleteSidebarLexiconGroup(groupId: string) {
+    const resolved = findLexiconGroupById(groupId)
+    if (!resolved) {
+      setStatus('未找到要删除的分组。')
+      return
+    }
+
+    const confirmed = window.confirm(`确认删除分组“${resolved.group.name}”？其中的条目也会一并删除。`)
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await deleteLexiconGroupRequest(resolved.lexicon.id, resolved.group.id)
+      await refreshLexiconGroups()
+      setActiveLexiconId(resolved.lexicon.id)
+      if (activeSidebarGroupId === groupId) {
+        setActiveSidebarGroupId(null)
+      }
+      setStatus(`已删除分组：${resolved.group.name}`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function moveSidebarLexiconGroup(movingGroupId: string, anchorGroupId: string, placement: 'before' | 'after') {
+    const moving = findLexiconGroupById(movingGroupId)
+    const anchor = findLexiconGroupById(anchorGroupId)
+    if (!moving || !anchor || moving.lexicon.id !== anchor.lexicon.id || moving.group.id === anchor.group.id) {
+      return
+    }
+
+    try {
+      await moveLexiconGroupRequest(moving.lexicon.id, moving.group.id, anchor.group.id, placement)
+      await refreshLexiconGroups()
+      setActiveLexiconId(moving.lexicon.id)
+      setActiveLexiconGroupId(moving.group.id)
+      setActiveSidebarGroupId(moving.group.id)
+      setStatus(`已调整分组顺序：${moving.group.name}`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function createSidebarLexiconEntry(groupId: string) {
+    const resolved = findLexiconGroupById(groupId)
+    if (!resolved) {
+      setStatus('请先选择一个分组。')
+      return
+    }
+
+    const text = window.prompt('条目内容')?.trim()
+    if (!text) {
+      return
+    }
+
+    try {
+      await createLexiconEntryRequest(resolved.lexicon.id, resolved.group.id, text)
+      await refreshLexiconGroups()
+      setActiveLexiconId(resolved.lexicon.id)
+      setActiveLexiconGroupId(resolved.group.id)
+      setActiveSidebarGroupId(resolved.group.id)
+      setStatus('已添加词库条目。')
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function renameSidebarLexiconEntry(groupId: string, entryId: string) {
+    const resolved = findLexiconEntryById(groupId, entryId)
+    if (!resolved) {
+      setStatus('未找到要重命名的条目。')
+      return
+    }
+
+    const text = window.prompt('条目内容', resolved.entry.text)?.trim()
+    if (!text || text === resolved.entry.text) {
+      return
+    }
+
+    try {
+      await updateLexiconEntryRequest(resolved.lexicon.id, resolved.group.id, resolved.entry.id, text)
+      await refreshLexiconGroups()
+      setActiveLexiconId(resolved.lexicon.id)
+      setActiveLexiconGroupId(resolved.group.id)
+      setActiveSidebarGroupId(resolved.group.id)
+      setStatus('已更新词库条目。')
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function deleteSidebarLexiconEntry(groupId: string, entryId: string) {
+    const resolved = findLexiconEntryById(groupId, entryId)
+    if (!resolved) {
+      setStatus('未找到要删除的条目。')
+      return
+    }
+
+    const confirmed = window.confirm(`确认删除条目“${resolved.entry.text}”？`)
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await deleteLexiconEntryRequest(resolved.lexicon.id, resolved.group.id, resolved.entry.id)
+      await refreshLexiconGroups()
+      setActiveLexiconId(resolved.lexicon.id)
+      setActiveLexiconGroupId(resolved.group.id)
+      setActiveSidebarGroupId(resolved.group.id)
+      setStatus('已删除词库条目。')
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function moveSidebarLexiconEntry(sourceGroupId: string, movingEntryId: string, targetGroupId: string, anchorEntryId: string | null, placement: 'before' | 'after') {
+    const resolved = findLexiconEntryById(sourceGroupId, movingEntryId)
+    const target = findLexiconGroupById(targetGroupId)
+    const anchor = anchorEntryId ? findLexiconEntryById(targetGroupId, anchorEntryId) : null
+    if (!resolved || !target || (anchorEntryId && !anchor) || (resolved.group.id === target.group.id && resolved.entry.id === anchorEntryId)) {
+      return
+    }
+
+    try {
+      await moveLexiconEntryRequest(resolved.lexicon.id, resolved.group.id, resolved.entry.id, anchorEntryId, placement, target.group.id)
+      await refreshLexiconGroups()
+      setActiveLexiconId(resolved.lexicon.id)
+      setActiveLexiconGroupId(target.group.id)
+      setActiveSidebarGroupId(target.group.id)
+      setStatus('已调整条目顺序。')
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  function bindLexiconGroupToElement(
+    elementId: string,
+    groupId: string,
+    options: { source?: LexiconActionSource; record?: boolean; silent?: boolean; activateGroup?: boolean } = {},
+  ) {
+    const { source = 'button', record = true, silent = false, activateGroup = true } = options
+    const result = setElementGroupBinding(elementId, groupId, true, { activateGroup })
+    if (!result.ok || !result.target) {
+      if (!silent) {
+        setStatus('不可绑定：该元素不支持词库。')
+      }
+      return false
+    }
+
+    if (!result.changed) {
+      if (!silent) {
+        if (activateGroup) {
+          setActiveSidebarGroupId(groupId)
+        }
+        setStatus(`当前元素已绑定分组：${result.groupName}`)
+      }
+      return false
+    }
+
+    if (record) {
+      setLastLexiconAction({
+        kind: 'bind-group',
+        tabId: activeTabId ?? '',
+        elementId,
+        elementName: getLexiconActionElementName(result.target),
+        groupId,
+        groupName: result.groupName,
+        source,
+      })
+    }
+
+    if (!silent) {
+      setStatus(`已绑定分组：${result.groupName} -> ${getLexiconActionElementName(result.target)}`)
+    }
+    return true
+  }
+
+  function unbindLexiconGroupFromElement(
+    elementId: string,
+    groupId: string,
+    options: { source?: LexiconActionSource; record?: boolean; silent?: boolean; activateGroup?: boolean } = {},
+  ) {
+    const { source = 'button', record = true, silent = false, activateGroup = true } = options
+    const result = setElementGroupBinding(elementId, groupId, false, { activateGroup })
+    if (!result.ok || !result.target) {
+      if (!silent) {
+        setStatus('不可取消绑定：该元素不支持词库。')
+      }
+      return false
+    }
+
+    if (!result.changed) {
+      if (!silent) {
+        setStatus(`当前元素未绑定分组：${result.groupName}`)
+      }
+      return false
+    }
+
+    if (record) {
+      setLastLexiconAction({
+        kind: 'unbind-group',
+        tabId: activeTabId ?? '',
+        elementId,
+        elementName: getLexiconActionElementName(result.target),
+        groupId,
+        groupName: result.groupName,
+        source,
+      })
+    }
+
+    if (!silent) {
+      setStatus(`已取消绑定：${result.groupName} -> ${getLexiconActionElementName(result.target)}`)
+    }
+    return true
+  }
+
+  function applyEntryToElement(
+    elementId: string,
+    text: string,
+    groupId: string | null,
+    options: { source?: LexiconActionSource; record?: boolean; silent?: boolean; activateGroup?: boolean; ignoreLock?: boolean } = {},
+  ) {
+    const { source = 'button', record = true, silent = false, activateGroup = true, ignoreLock = false } = options
+    const target = labelDocument.elements.find((element) => element.id === elementId) ?? null
+    if (!isLexiconEnabledElement(target)) {
+      if (!silent) {
+        setStatus('不可应用：该元素不支持文本。')
+      }
+      return false
+    }
+
+    if (target.locked && !ignoreLock) {
+      if (!silent) {
+        setStatus('不可应用：目标元素已锁定。')
+      }
+      return false
+    }
+
+    const previousValue = target.type === 'text' ? target.text : target.value
+    updateElementById(elementId, createContentPatch(target, text))
+    setInlineEditorState(null)
+    if (groupId && activateGroup) {
+      setActiveSidebarGroupId(groupId)
+    }
+
+    if (record) {
+      setLastLexiconAction({
+        kind: 'apply-entry',
+        tabId: activeTabId ?? '',
+        elementId,
+        elementName: getLexiconActionElementName(target),
+        groupId,
+        groupName: groupId ? getLexiconActionGroupName(groupId) : null,
+        entryText: text,
+        previousValue,
+        nextValue: text,
+        source,
+      })
+    }
+
+    if (!silent) {
+      setStatus(`已应用条目：${text} -> ${getLexiconActionElementName(target)}`)
+    }
+    return true
+  }
+
+  function undoLastLexiconSidebarAction() {
+    if (!currentTabLexiconAction) {
+      return
+    }
+
+    if (currentTabLexiconAction.kind === 'bind-group') {
+      const reverted = unbindLexiconGroupFromElement(currentTabLexiconAction.elementId, currentTabLexiconAction.groupId, { record: false, silent: true, activateGroup: false })
+      if (reverted) {
+        setStatus(`已撤消绑定：${currentTabLexiconAction.groupName}`)
+      }
+      setLastLexiconAction(null)
+      return
+    }
+
+    if (currentTabLexiconAction.kind === 'unbind-group') {
+      const reverted = bindLexiconGroupToElement(currentTabLexiconAction.elementId, currentTabLexiconAction.groupId, { record: false, silent: true, activateGroup: false })
+      if (reverted) {
+        setStatus(`已恢复绑定：${currentTabLexiconAction.groupName}`)
+      }
+      setLastLexiconAction(null)
+      return
+    }
+
+    const reverted = applyEntryToElement(currentTabLexiconAction.elementId, currentTabLexiconAction.previousValue, currentTabLexiconAction.groupId, { record: false, silent: true, activateGroup: false, ignoreLock: true })
+    if (reverted) {
+      setStatus(`已撤消应用：${currentTabLexiconAction.elementName}`)
+    }
+    setLastLexiconAction(null)
+  }
+
+  function handleLexiconBindGroupToElement(elementId: string, groupId: string, source: LexiconActionSource = 'button') {
+    return bindLexiconGroupToElement(elementId, groupId, { source })
+  }
+
+  function handleLexiconUnbindGroupFromElement(elementId: string, groupId: string, source: LexiconActionSource = 'button') {
+    return unbindLexiconGroupFromElement(elementId, groupId, { source })
+  }
+
+  function handleLexiconApplyEntryToElement(elementId: string, text: string, groupId: string | null, source: LexiconActionSource = 'button') {
+    return applyEntryToElement(elementId, text, groupId, { source })
   }
 
   function openTab(nextTab: EditorTab) {
     setTabs((currentTabs) => [...currentTabs, nextTab])
     setActiveTabId(nextTab.id)
+    setLastEditorTabId(nextTab.id)
+    setSidebarTab('elements')
+    setActiveSurface('editor')
     setInteraction(null)
     setSnapLines([])
   }
@@ -754,6 +1334,11 @@ export default function App() {
 
         let dx = point.x - interaction.start.x
         let dy = point.y - interaction.start.y
+        const dragThreshold = 3 / canvasScale
+        if (Math.hypot(dx, dy) < dragThreshold) {
+          setSnapLines([])
+          return
+        }
 
         dx = clamp(dx, -startBounds.left, interaction.startDocument.widthMm - startBounds.right)
         dy = clamp(dy, -startBounds.top, interaction.startDocument.heightMm - startBounds.bottom)
@@ -961,15 +1546,17 @@ export default function App() {
 
   async function bootstrap() {
     try {
-      const [stateResponse, templatesResponse, lexiconGroupsResponse, lexiconLibraryResponse] = await Promise.all([
+      const [stateResponse, templatesResponse, specPresetsResponse, lexiconGroupsResponse, lexiconLibraryResponse] = await Promise.all([
         fetchAppState(),
         fetchTemplates(),
+        fetchDocumentSpecPresets(true),
         fetchLexiconGroups(),
         fetchLexiconLibrary(),
       ])
 
       setAppState(stateResponse)
       setTemplates(templatesResponse)
+      setDocumentSpecPresets(specPresetsResponse)
       setLexiconGroups(lexiconGroupsResponse)
       setLexiconLibrary(lexiconLibraryResponse)
       setActiveLexiconId((current) => current ?? lexiconLibraryResponse.lexicons[0]?.id ?? null)
@@ -978,12 +1565,18 @@ export default function App() {
       const restoredTabs = savedWorkspace?.tabs.map((tab) => normalizeEditorTab(tab)) ?? []
 
       if (restoredTabs.length > 0) {
-        const restoredSurface = savedWorkspace?.ui?.activeSurface ?? 'editor'
+        const legacyTemplatesSurface = savedWorkspace?.ui?.activeSurface === 'templates'
+        const restoredSurface =
+          savedWorkspace?.ui?.activeSurface === 'lexicons' || legacyTemplatesSurface
+            ? 'editor'
+            : savedWorkspace?.ui?.activeSurface ?? 'editor'
         setTabs(restoredTabs)
         setActiveTabId(savedWorkspace?.activeTabId && restoredTabs.some((tab) => tab.id === savedWorkspace.activeTabId) ? savedWorkspace.activeTabId : restoredTabs[0].id)
         setLastEditorTabId(savedWorkspace?.ui?.lastEditorTabId ?? savedWorkspace?.activeTabId ?? restoredTabs[0].id)
         setActiveSurface(restoredSurface)
-        setShowDocumentDialog(Boolean(savedWorkspace?.ui?.showDocumentDialog))
+        setActiveEditorPanel(savedWorkspace?.ui?.activeEditorPanel ?? 'inspector')
+        setSidebarTab(savedWorkspace?.ui?.sidebarTab ?? (legacyTemplatesSurface ? 'templates' : 'elements'))
+        setPreviewTemplateId(savedWorkspace?.ui?.previewTemplateId ?? null)
         setStatus(`已恢复上次工作区，共 ${restoredTabs.length} 个标签页。`)
         return
       }
@@ -991,7 +1584,8 @@ export default function App() {
       if (templatesResponse.length > 0) {
         setTabs([])
         setActiveTabId(null)
-        setActiveSurface('templates')
+        setActiveSurface('editor')
+        setSidebarTab('templates')
         setStatus(`已加载模板库，共 ${templatesResponse.length} 个模板。`)
         return
       }
@@ -1009,14 +1603,41 @@ export default function App() {
     setTemplates(await fetchTemplates())
   }
 
+  async function refreshDocumentSpecPresets(includeHidden = true) {
+    setDocumentSpecPresets(await fetchDocumentSpecPresets(includeHidden))
+  }
+
   function upsertTemplateSummary(record: LabelTemplateRecord) {
     const summary = toTemplateSummary(record)
     setTemplates((current) => {
       const next = current.some((template) => template.id === summary.id)
         ? current.map((template) => (template.id === summary.id ? summary : template))
-        : [summary, ...current]
+        : [...current, summary]
+      next.sort((left, right) => {
+        if (left.sortOrder !== right.sortOrder) {
+          return left.sortOrder - right.sortOrder
+        }
+
+        return right.updatedAt.localeCompare(left.updatedAt)
+      })
       return next
     })
+  }
+
+  async function moveSidebarTemplate(movingTemplateId: string, anchorTemplateId: string, placement: 'before' | 'after') {
+    if (movingTemplateId === anchorTemplateId) {
+      return
+    }
+
+    try {
+      const moved = await moveTemplateRequest(movingTemplateId, {
+        anchorId: anchorTemplateId,
+        placement,
+      })
+      setTemplates(moved)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
   }
 
   async function refreshLexiconGroups() {
@@ -1189,11 +1810,72 @@ export default function App() {
     )
   }
 
-  async function loadTemplate(id: string) {
+  const applyPrinterCalibration = useCallback((record: PrinterCalibrationRecord | null, printerName: string, devicePath: string) => {
+    updateDocument((current) => ({
+      ...current,
+      calibrationPrinterDevicePath: devicePath,
+      calibrationProfileId: record?.id ?? null,
+      printCalibrationState: record?.state ?? 'unset',
+      printCalibrationLabel: record?.label ?? (printerName ? '未设置' : null),
+      printOffsetXMm: record?.printOffsetXMm ?? 0,
+      printOffsetYMm: record?.printOffsetYMm ?? 0,
+      printRotation: record?.printRotation ?? 0,
+      darkness: record?.darkness ?? 8,
+      printInvert: record?.printInvert ?? false,
+    }), { pushHistory: false })
+  }, [updateDocument])
+
+  function sortCalibrationProfiles(profiles: PrinterCalibrationRecord[]) {
+    return [...profiles].sort((left, right) => {
+      if (left.isDefault !== right.isDefault) {
+        return left.isDefault ? -1 : 1
+      }
+
+      const updatedAtComparison = right.updatedAt.localeCompare(left.updatedAt)
+      if (updatedAtComparison !== 0) {
+        return updatedAtComparison
+      }
+
+      return left.label.localeCompare(right.label, 'zh-CN')
+    })
+  }
+
+  const loadCalibrationForPrinter = useCallback(async (devicePath: string, printerName: string) => {
+    try {
+      const calibrations = await fetchPrinterCalibrations(devicePath)
+      setPrinterCalibrationProfiles(calibrations)
+      setLoadedCalibrationDevicePath(devicePath)
+      const selected = calibrations.find((item) => item.id === documentRef.current.calibrationProfileId) ?? calibrations[0] ?? null
+      applyPrinterCalibration(selected, printerName, devicePath)
+    } catch {
+      setPrinterCalibrationProfiles([])
+      setLoadedCalibrationDevicePath(devicePath)
+      applyPrinterCalibration(null, printerName, devicePath)
+    }
+  }, [applyPrinterCalibration])
+
+  useEffect(() => {
+    if (!hasActiveTab || !currentPrinter?.devicePath) {
+      setPrinterCalibrationProfiles([])
+      setLoadedCalibrationDevicePath(null)
+      return
+    }
+
+    if (loadedCalibrationDevicePath === currentPrinter.devicePath) {
+      return
+    }
+
+    void loadCalibrationForPrinter(currentPrinter.devicePath, currentPrinter.displayName)
+  }, [currentPrinter?.devicePath, currentPrinter?.displayName, hasActiveTab, loadedCalibrationDevicePath, loadCalibrationForPrinter])
+
+  async function loadTemplate(id: string, options?: { forceSidebarTab?: SidebarTab }) {
     const template = await fetchTemplate(id)
     const existingTab = tabsRef.current.find((tab) => tab.templateId === template.id)
     if (existingTab) {
       showEditor(existingTab.id)
+      if (options?.forceSidebarTab) {
+        setSidebarTab(options.forceSidebarTab)
+      }
       setStatus(`已切换到模板：${template.name}`)
       return
     }
@@ -1205,6 +1887,9 @@ export default function App() {
         origin: 'template',
       }),
     )
+    if (options?.forceSidebarTab) {
+      setSidebarTab(options.forceSidebarTab)
+    }
     setStatus(`已加载模板：${template.name}`)
   }
 
@@ -1216,12 +1901,12 @@ export default function App() {
     await saveTab(activeTabId)
   }
 
-  async function persistCurrentDocument(options?: { silent?: boolean }) {
+  async function persistCurrentDocument(options?: { silent?: boolean; documentOverride?: LabelDocument }) {
     if (!activeTabId) {
       return
     }
 
-    await saveTab(activeTabId, { silent: options?.silent })
+    await saveTab(activeTabId, { silent: options?.silent, documentOverride: options?.documentOverride })
   }
 
   async function saveAsTemplate() {
@@ -1232,18 +1917,20 @@ export default function App() {
     await saveTab(activeTabId, { forceSaveAs: true })
   }
 
-  async function saveTab(tabId: string, options?: { forceSaveAs?: boolean; silent?: boolean }) {
+  async function saveTab(tabId: string, options?: { forceSaveAs?: boolean; silent?: boolean; documentOverride?: LabelDocument }) {
     const tab = getTabById(tabId)
     if (!tab) {
       return false
     }
 
+    const documentToSave = options?.documentOverride ? normalizeDocument(options.documentOverride) : tab.document
+
     if (!options?.forceSaveAs && tab.templateId) {
       setSaving(true)
       try {
         const saved = await updateTemplate(tab.templateId, {
-          name: tab.document.name,
-          document: tab.document,
+          name: documentToSave.name,
+          document: documentToSave,
         })
 
         applySavedTemplateToTabs(saved, tab.id, serializeTabSnapshot(tab))
@@ -1264,7 +1951,7 @@ export default function App() {
       }
     }
 
-    const suggestedName = tab.document.name?.trim() || '未命名标签'
+    const suggestedName = documentToSave.name?.trim() || '未命名标签'
     const targetName = window.prompt('另存为模板名称', suggestedName)?.trim()
     if (!targetName) {
       return false
@@ -1275,7 +1962,7 @@ export default function App() {
       const saved = await createTemplate({
         name: targetName,
         document: {
-          ...tab.document,
+          ...documentToSave,
           name: targetName,
         },
       })
@@ -1298,7 +1985,13 @@ export default function App() {
     }
   }
 
-  function requestAppClose(source: 'app' | 'host' = 'app') {
+  const completeAppClose = useCallback(() => {
+    allowImmediateCloseRef.current = true
+    setHostCloseRequestPending(false)
+    sendWindowChromeCommand('force-close')
+  }, [])
+
+  const requestAppClose = useCallback((source: 'app' | 'host' = 'app') => {
     allowImmediateCloseRef.current = false
 
     if (dirtyTabs.length === 0) {
@@ -1310,7 +2003,20 @@ export default function App() {
       setHostCloseRequestPending(false)
     }
     setPendingSavesOpen(true)
-  }
+  }, [completeAppClose, dirtyTabs.length])
+
+  useEffect(() => {
+    sendWindowChromeCommand('sync-state')
+    return subscribeWindowChromeMessages((message) => {
+      if (message.command === 'state-changed') {
+        setWindowIsMaximized(message.isMaximized)
+        return
+      }
+
+      setHostCloseRequestPending(true)
+      requestAppClose('host')
+    })
+  }, [requestAppClose])
 
   function startExitReview(tabIds: string[]) {
     if (tabIds.length === 0) {
@@ -1394,12 +2100,6 @@ export default function App() {
     abortPendingHostClose()
   }
 
-  function completeAppClose() {
-    allowImmediateCloseRef.current = true
-    setHostCloseRequestPending(false)
-    sendWindowChromeCommand('force-close')
-  }
-
   function abortPendingHostClose() {
     allowImmediateCloseRef.current = false
     if (!hostCloseRequestPending) {
@@ -1443,6 +2143,7 @@ export default function App() {
           }
         }),
       )
+      setPreviewTemplateRecord((current) => current?.id === saved.id ? saved : current)
       await refreshTemplateLibrary()
       setStatus(`已重命名模板：${saved.name}`)
     } catch (error) {
@@ -1460,8 +2161,11 @@ export default function App() {
       const duplicated = await duplicateTemplateRequest(template.id, {
         name: nextName,
       } as DuplicateTemplateRequest)
+      setPreviewTemplateId(duplicated.id)
+      setPreviewTemplateRecord(duplicated)
+      setSidebarTab('templates')
       await refreshTemplateLibrary()
-      setStatus(`已复制模板：${duplicated.name}。可在模板库中打开。`)
+      setStatus(`已复制模板：${duplicated.name}`)
     } catch (error) {
       setStatus(getErrorMessage(error))
     }
@@ -1489,6 +2193,10 @@ export default function App() {
             : tab,
         ),
       )
+      if (previewTemplateId === template.id) {
+        setPreviewTemplateId(null)
+        setPreviewTemplateRecord(null)
+      }
       await refreshTemplateLibrary()
       setStatus(`已删除模板：${template.name}`)
     } catch (error) {
@@ -1496,7 +2204,14 @@ export default function App() {
     }
   }
 
-  async function printCurrent() {
+  function buildCheckedDocument() {
+    return normalizeDocument({
+      ...documentRef.current,
+      lastPrintCheckSignature: createPrintCheckSignature(documentRef.current, currentPrinter),
+    })
+  }
+
+  async function printCurrent(options?: { markChecked?: boolean; statusLabel?: string }) {
     if (!currentPrinter) {
       setStatus('没有发现可用打印机，请连接设备后刷新状态。')
       return
@@ -1509,14 +2224,21 @@ export default function App() {
 
     setPrinting(true)
     try {
+      const documentToPrint = options?.markChecked ? buildCheckedDocument() : documentRef.current
       const response = await printDocument({
-        document: labelDocument,
+        document: documentToPrint,
         devicePathOverride: currentPrinter.devicePath,
       })
-      await persistCurrentDocument({ silent: true })
+      if (options?.markChecked) {
+        updateActiveTab((tab) => ({
+          ...tab,
+          document: documentToPrint,
+        }))
+      }
+      await persistCurrentDocument({ silent: true, documentOverride: documentToPrint })
 
-      setStatus(`打印已发送到设备：${response.devicePath}`)
-      queueActivity(`已打印：${labelDocument.name}`)
+      setStatus(options?.statusLabel ?? `打印已发送到设备：${response.devicePath}`)
+      queueActivity(`已打印：${documentRef.current.name}`)
     } catch (error) {
       setStatus(getErrorMessage(error))
     } finally {
@@ -1566,6 +2288,77 @@ export default function App() {
       setStatus(`导出失败：${getErrorMessage(error)}`)
     } finally {
       setExporting(false)
+    }
+  }
+
+  async function backupAllData() {
+    if (dataManaging) {
+      return
+    }
+
+    setDataManaging(true)
+    try {
+      const result = await createFullDataBackup()
+      setStatus(`已备份全部数据：${result.fileName}`)
+      queueActivity(`已备份数据：${result.fileName}`)
+    } catch (error) {
+      setStatus(`备份失败：${getErrorMessage(error)}`)
+    } finally {
+      setDataManaging(false)
+    }
+  }
+
+  function requestRestoreDataBackup() {
+    if (dataManaging) {
+      return
+    }
+
+    backupInputRef.current?.click()
+  }
+
+  async function handleBackupRestoreUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || dataManaging) {
+      return
+    }
+
+    const confirmed = window.confirm('恢复备份会覆盖当前模板、词库和程序设置。程序会先自动备份当前数据，确认继续吗？')
+    if (!confirmed) {
+      setStatus('已取消恢复备份。')
+      return
+    }
+
+    setDataManaging(true)
+    try {
+      const result = await restoreDataBackup(file)
+      window.localStorage.removeItem(workspaceStorageKey)
+      setTabs([])
+      setActiveTabId(null)
+      setPreviewTemplateId(null)
+      await bootstrap()
+      setStatus(`已恢复备份：${result.sourceFileName}。恢复前快照：${result.preRestoreBackupFileName}`)
+      queueActivity(`已恢复备份：${result.sourceFileName}`)
+    } catch (error) {
+      setStatus(`恢复备份失败：${getErrorMessage(error)}`)
+    } finally {
+      setDataManaging(false)
+    }
+  }
+
+  async function openLocalDataDirectory() {
+    if (dataManaging) {
+      return
+    }
+
+    setDataManaging(true)
+    try {
+      await openDataDirectory()
+      setStatus('已打开备份目录。')
+    } catch (error) {
+      setStatus(`打开备份目录失败：${getErrorMessage(error)}`)
+    } finally {
+      setDataManaging(false)
     }
   }
 
@@ -1722,6 +2515,326 @@ export default function App() {
     updateDocument((current) => ({ ...current, [field]: value }))
   }
 
+  function setCopies(nextCopies: number) {
+    setDocumentField('copies', nextCopies)
+  }
+
+  function adjustCopies(delta: number) {
+    setCopies(labelDocument.copies + delta)
+  }
+
+  function handlePrinterChange(devicePath: string) {
+    updateDocument((current) => ({
+      ...current,
+      printerDevicePath: devicePath,
+    }))
+  }
+
+  function updateCalibrationField<K extends keyof LabelDocument>(field: K, value: LabelDocument[K]) {
+    updateDocument((current) => ({
+      ...current,
+      [field]: value,
+      printCalibrationState:
+        current.calibrationPrinterDevicePath && current.calibrationPrinterDevicePath === (current.printerDevicePath ?? null)
+          ? 'unconfirmed'
+          : current.printCalibrationState ?? 'unset',
+    }))
+  }
+
+  async function saveCalibration(mode: 'update-current' | 'save-as-new' | 'rename-current') {
+    if (!currentPrinter) {
+      return
+    }
+
+    try {
+      const defaultLabel =
+        mode === 'save-as-new'
+          ? `${labelDocument.printCalibrationLabel?.trim() || '当前打印机校准'} 副本`
+          : labelDocument.printCalibrationLabel?.trim() || '当前打印机校准'
+      const label = window.prompt('校准方案标签', defaultLabel)?.trim()
+      if (!label) {
+        return
+      }
+
+      const saved = await savePrinterCalibration({
+        id:
+          mode !== 'save-as-new' && labelDocument.calibrationPrinterDevicePath === currentPrinter.devicePath
+            ? labelDocument.calibrationProfileId ?? null
+            : null,
+        devicePath: currentPrinter.devicePath,
+        printerName: currentPrinter.displayName,
+        isDefault:
+          mode !== 'save-as-new'
+          && labelDocument.calibrationPrinterDevicePath === currentPrinter.devicePath
+          && (
+            printerCalibrationProfiles.find((profile) => profile.id === labelDocument.calibrationProfileId)?.isDefault
+            ?? false
+          ),
+        state: 'calibrated',
+        label,
+        printOffsetXMm: labelDocument.printOffsetXMm,
+        printOffsetYMm: labelDocument.printOffsetYMm,
+        printRotation: labelDocument.printRotation,
+        darkness: labelDocument.darkness,
+        printInvert: labelDocument.printInvert,
+      })
+      setPrinterCalibrationProfiles((current) => {
+        const next = current.some((profile) => profile.id === saved.id)
+          ? current.map((profile) => (profile.id === saved.id ? saved : profile))
+          : [saved, ...current]
+        return sortCalibrationProfiles(next)
+      })
+      applyPrinterCalibration(saved, currentPrinter.displayName, currentPrinter.devicePath)
+      setStatus(
+        mode === 'rename-current'
+          ? `已更新 ${currentPrinter.displayName} 的校准方案：${label}`
+          : mode === 'save-as-new'
+            ? `已另存 ${currentPrinter.displayName} 的新校准方案：${label}`
+            : `已保存 ${currentPrinter.displayName} 的校准方案：${label}`,
+      )
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  function resetCalibration() {
+    updateDocument((current) => ({
+      ...current,
+      printRotation: 0,
+      darkness: 8,
+      printInvert: false,
+      printOffsetXMm: 0,
+      printOffsetYMm: 0,
+      calibrationPrinterDevicePath: currentPrinter?.devicePath ?? null,
+      calibrationProfileId: null,
+      printCalibrationState: currentPrinter ? 'default' : 'unset',
+      printCalibrationLabel: currentPrinter ? '默认校准' : null,
+    }))
+    setStatus(currentPrinter ? `已重置 ${currentPrinter.displayName} 为默认校准。` : '已重置当前校准字段。')
+  }
+
+  function selectCalibrationProfile(profileId: string) {
+    if (!currentPrinter) {
+      return
+    }
+
+    if (!profileId) {
+      resetCalibration()
+      return
+    }
+
+    const profile = printerCalibrationProfiles.find((item) => item.id === profileId)
+    if (!profile) {
+      setStatus('未找到所选校准方案。')
+      return
+    }
+
+    applyPrinterCalibration(profile, currentPrinter.displayName, currentPrinter.devicePath)
+    setStatus(`已切换校准方案：${profile.label}`)
+  }
+
+  async function setSelectedCalibrationAsDefault() {
+    if (!currentPrinter || !labelDocument.calibrationProfileId) {
+      return
+    }
+
+    const profile = printerCalibrationProfiles.find((item) => item.id === labelDocument.calibrationProfileId)
+    if (!profile || profile.isDefault) {
+      return
+    }
+
+    try {
+      const saved = await savePrinterCalibration({
+        id: profile.id,
+        devicePath: profile.devicePath,
+        printerName: profile.printerName,
+        isDefault: true,
+        state: profile.state,
+        label: profile.label,
+        printOffsetXMm: labelDocument.printOffsetXMm,
+        printOffsetYMm: labelDocument.printOffsetYMm,
+        printRotation: labelDocument.printRotation,
+        darkness: labelDocument.darkness,
+        printInvert: labelDocument.printInvert,
+      })
+
+      setPrinterCalibrationProfiles((current) =>
+        sortCalibrationProfiles(
+          current.map((item) => {
+            if (item.id === saved.id) {
+              return saved
+            }
+
+            if (item.devicePath === saved.devicePath && item.isDefault) {
+              return { ...item, isDefault: false }
+            }
+
+            return item
+          }),
+        ),
+      )
+      applyPrinterCalibration(saved, currentPrinter.displayName, currentPrinter.devicePath)
+      setStatus(`已将 ${saved.label} 设为 ${currentPrinter.displayName} 的默认校准方案。`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function deleteSelectedCalibrationProfile() {
+    if (!currentPrinter || !labelDocument.calibrationProfileId) {
+      return
+    }
+
+    const profile = printerCalibrationProfiles.find((item) => item.id === labelDocument.calibrationProfileId)
+    if (!profile) {
+      return
+    }
+
+    const confirmed = window.confirm(`确认删除校准方案“${profile.label}”？`)
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await deletePrinterCalibration(currentPrinter.devicePath, profile.id)
+      const remainingProfiles = printerCalibrationProfiles.filter((item) => item.id !== profile.id)
+      setPrinterCalibrationProfiles(remainingProfiles)
+      if (remainingProfiles.length > 0) {
+        applyPrinterCalibration(remainingProfiles[0], currentPrinter.displayName, currentPrinter.devicePath)
+        setStatus(`已删除校准方案：${profile.label}，并切换到 ${remainingProfiles[0].label}`)
+      } else {
+        resetCalibration()
+        setStatus(`已删除校准方案：${profile.label}`)
+      }
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  function applyDocumentSpecPreset(preset: DocumentSpecPresetSummary) {
+    updateDocument((current) => ({
+      ...current,
+      widthMm: preset.widthMm,
+      heightMm: preset.heightMm,
+      gapMm: preset.gapMm,
+      sourceSpecId: preset.id,
+      sourceSpecName: preset.name,
+    }))
+    setStatus(`已套用规格预设：${preset.name}`)
+  }
+
+  async function saveCurrentDocumentSpecAsPreset(options?: { suggestedName?: string }) {
+    const suggestedName = options?.suggestedName ?? (labelDocument.sourceSpecName?.trim() || `${labelDocument.widthMm} x ${labelDocument.heightMm} mm`)
+    const name = window.prompt('规格预设名称', suggestedName)?.trim()
+    if (!name) {
+      return
+    }
+
+    try {
+      const created = await createDocumentSpecPreset({
+        name,
+        widthMm: labelDocument.widthMm,
+        heightMm: labelDocument.heightMm,
+        gapMm: labelDocument.gapMm,
+        notes: null,
+      })
+      await refreshDocumentSpecPresets()
+      updateDocument((current) => ({
+        ...current,
+        sourceSpecId: created.id,
+        sourceSpecName: created.name,
+      }), { pushHistory: false })
+      setStatus(`已保存规格预设：${created.name}`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function saveDocumentSpecPresetEdit(preset: DocumentSpecPresetSummary, nextName: string, nextNotes: string) {
+    const name = nextName.trim()
+    if (!name) {
+      setStatus('规格预设名称不能为空。')
+      return
+    }
+
+    const notes = nextNotes.trim()
+    try {
+      await updateDocumentSpecPreset(preset.id, {
+        name,
+        notes: notes || null,
+        isHidden: preset.isHidden,
+        isArchived: preset.isArchived,
+      })
+      await refreshDocumentSpecPresets()
+      if (labelDocument.sourceSpecId === preset.id) {
+        updateDocument((current) => ({
+          ...current,
+          sourceSpecName: name,
+        }), { pushHistory: false })
+      }
+      setStatus(`已更新规格预设：${name}`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function toggleArchiveDocumentSpecPreset(preset: DocumentSpecPresetSummary) {
+    try {
+      await updateDocumentSpecPreset(preset.id, {
+        name: preset.name,
+        notes: preset.notes ?? null,
+        isHidden: preset.isHidden,
+        isArchived: !preset.isArchived,
+      })
+      await refreshDocumentSpecPresets()
+      setStatus(`${preset.isArchived ? '已取消归档' : '已归档'}规格预设：${preset.name}`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function toggleHiddenDocumentSpecPreset(preset: DocumentSpecPresetSummary) {
+    try {
+      await updateDocumentSpecPreset(preset.id, {
+        name: preset.name,
+        notes: preset.notes ?? null,
+        isHidden: !preset.isHidden,
+        isArchived: preset.isArchived,
+      })
+      await refreshDocumentSpecPresets()
+      setStatus(`${preset.isHidden ? '已取消隐藏' : '已隐藏'}规格预设：${preset.name}`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
+  async function removeDocumentSpecPreset(preset: DocumentSpecPresetSummary) {
+    if (preset.referenceCount > 0) {
+      setStatus(`规格“${preset.name}”已有 ${preset.referenceCount} 个模板使用，不能直接删除。`)
+      return
+    }
+
+    const confirmed = window.confirm(`确认删除规格预设“${preset.name}”？`)
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await deleteDocumentSpecPreset(preset.id)
+      await refreshDocumentSpecPresets()
+      if (labelDocument.sourceSpecId === preset.id) {
+        updateDocument((current) => ({
+          ...current,
+          sourceSpecId: null,
+          sourceSpecName: current.sourceSpecName ?? preset.name,
+        }), { pushHistory: false })
+      }
+      setStatus(`已删除规格预设：${preset.name}`)
+    } catch (error) {
+      setStatus(getErrorMessage(error))
+    }
+  }
+
   function deleteSelectedElements() {
     if (selectedElementIds.length === 0) {
       return
@@ -1734,11 +2847,22 @@ export default function App() {
     }
 
     const removedCount = removableIds.length
+    const removableSet = new Set(removableIds)
+    const orderedElements = sortElementsByListOrder(labelDocument.elements)
+    const firstRemovedIndex = orderedElements.findIndex((element) => removableSet.has(element.id))
+    const remainingOrderedElements = orderedElements.filter((element) => !removableSet.has(element.id))
+    const fallbackIndex = firstRemovedIndex < 0 ? -1 : Math.min(firstRemovedIndex, Math.max(remainingOrderedElements.length - 1, 0))
+    const nextSelection =
+      remainingOrderedElements.length === 0 || fallbackIndex < 0
+        ? []
+        : [remainingOrderedElements[fallbackIndex]?.id ?? remainingOrderedElements.at(-1)?.id].filter(Boolean) as string[]
+
     updateDocument((current) => ({
       ...current,
-      elements: reindexElements(current.elements.filter((element) => !removableIds.includes(element.id))),
+      elements: reindexElements(current.elements.filter((element) => !removableSet.has(element.id))),
     }))
-    setActiveSelection(selectedElementIds.filter((id) => !removableIds.includes(id)))
+    setInlineEditorState((current) => (current && removableSet.has(current.elementId) ? null : current))
+    setActiveSelection(nextSelection)
     queueActivity(`已删除 ${removedCount} 个元素`)
   }
 
@@ -1962,6 +3086,7 @@ export default function App() {
         : [element.id]
 
     setActiveSelection(nextSelection)
+    setInlineEditorState((current) => (current?.elementId === element.id ? current : null))
     if (additive || element.locked) {
       return
     }
@@ -1974,6 +3099,48 @@ export default function App() {
       startDocument: documentRef.current,
       selectedIds: nextSelection,
     })
+  }
+
+  function handleElementDoubleClick(element: LabelElement, event: ReactMouseEvent<HTMLDivElement>) {
+    event.stopPropagation()
+    event.preventDefault()
+    if (!isLexiconEnabledElement(element)) {
+      return
+    }
+
+    const currentValue = element.type === 'text' ? element.text : element.value
+    setActiveSelection([element.id])
+    setInlineEditorState({
+      elementId: element.id,
+      draft: currentValue,
+      initialValue: currentValue,
+    })
+  }
+
+  function handleInlineEditorChange(value: string) {
+    setInlineEditorState((current) => (current ? { ...current, draft: value } : current))
+  }
+
+  function commitInlineEditor() {
+    if (!inlineEditorState) {
+      return
+    }
+
+    const element = labelDocument.elements.find((item) => item.id === inlineEditorState.elementId) ?? null
+    if (!isLexiconEnabledElement(element)) {
+      setInlineEditorState(null)
+      return
+    }
+
+    if (inlineEditorState.draft !== inlineEditorState.initialValue) {
+      updateElementById(element.id, createContentPatch(element, inlineEditorState.draft))
+    }
+
+    setInlineEditorState(null)
+  }
+
+  function cancelInlineEditor() {
+    setInlineEditorState(null)
   }
 
   function handleResizeHandlePointerDown(handle: ResizeHandle, event: ReactPointerEvent<HTMLButtonElement>) {
@@ -2018,63 +3185,49 @@ export default function App() {
       <WorkspaceTopbar
         windowIsMaximized={windowIsMaximized}
         activeSurface={activeSurface}
-        showDocumentDialog={showDocumentDialog}
+        activeEditorPanel={activeEditorPanel}
         hasActiveTab={hasActiveTab}
         tabs={tabs}
         activeTabId={activeTabId}
         isTabDirty={isTabDirty}
         recentClosedTabsCount={recentClosedTabs.length}
-        bindableSelectedCount={bindableSelectedElements.length}
-        contentPickerOpen={contentPickerOpen}
-        groupBinderOpen={groupBinderOpen}
         appState={appState}
         activeTabDirty={activeTabDirty}
+        copies={labelDocument.copies}
         printerDevicePath={labelDocument.printerDevicePath ?? appState?.printers[0]?.devicePath ?? ''}
         currentPrinter={currentPrinter}
+        calibrationLabel={printCheckReport.calibrationLabel}
+        quickPrintAllowed={printCheckReport.quickPrintAllowed}
         refreshingPrinters={refreshingPrinters}
         saving={saving}
         printing={printing}
         exporting={exporting}
+        dataManaging={dataManaging}
         onShowEditor={showEditor}
         onCloseTab={closeTab}
         onCreateFreshDocument={createFreshDocument}
-        onToggleSurface={toggleSurface}
-        onShowDocumentDialog={() => setShowDocumentDialog(true)}
-        onToggleGroupBinder={() => setGroupBinderOpen((open) => !open)}
-        onToggleContentPicker={() => setContentPickerOpen((open) => !open)}
+        onOpenDocumentSpec={openDocumentSpecPanel}
+        onOpenPrintCalibration={openPrintCalibrationPanel}
         onImportDdl={() => ddlInputRef.current?.click()}
         onReopenLastClosedTab={reopenLastClosedTab}
-        onPrinterChange={(devicePath) => setDocumentField('printerDevicePath', devicePath)}
+        onPrinterChange={handlePrinterChange}
         onRefreshPrinters={() => void refreshPrinters()}
+        onCopiesChange={setCopies}
+        onDecreaseCopies={() => adjustCopies(-1)}
+        onIncreaseCopies={() => adjustCopies(1)}
         onSaveCurrentTemplate={() => void saveCurrentTemplate()}
         onSaveAsTemplate={() => void saveAsTemplate()}
         onShowExportDialog={() => setShowExportDialog(true)}
-        onShowPrintPreview={() => setStatus('预览页面将在后续版本开放。')}
-        onPrintCurrent={printCurrent}
+        onBackupAllData={() => void backupAllData()}
+        onRestoreDataBackup={requestRestoreDataBackup}
+        onOpenDataDirectory={() => void openLocalDataDirectory()}
+        onOpenPrintCheck={openPrintCheckSurface}
+        onPrintCurrent={() => void printCurrent()}
         onRequestAppClose={requestAppClose}
       />
 
-      <main className={clsx('workspace', activeSurface !== 'editor' && 'library-mode')}>
-        {activeSurface === 'templates' ? (
-          <TemplateLibraryView
-            templates={templates}
-            visibleTemplates={visibleTemplates}
-            templateQuery={templateQuery}
-            templateSort={templateSort}
-            openedTemplateState={openedTemplateState}
-            onTemplateQueryChange={setTemplateQuery}
-            onTemplateSortChange={setTemplateSort}
-            onCreateDocument={createFreshDocument}
-            onImportDdl={() => ddlInputRef.current?.click()}
-            onOpenTemplate={(templateId) => {
-              void loadTemplate(templateId)
-              setActiveSurface('editor')
-            }}
-            onDuplicateTemplate={(template) => void duplicateTemplate(template)}
-            onRenameTemplate={(template) => void renameTemplate(template)}
-            onDeleteTemplate={(template) => void deleteTemplate(template)}
-          />
-        ) : activeSurface === 'lexicons' ? (
+      <main className={clsx('workspace', activeSurface === 'print-check' && 'print-check-mode', sidebarTab === 'templates' && activeSurface === 'editor' && 'template-preview-mode')}>
+        {activeSurface === 'lexicons' ? (
           <LexiconManager
             library={lexiconLibrary}
             activeGroup={activeLexiconGroup}
@@ -2089,12 +3242,45 @@ export default function App() {
             onUpdateEntry={(entry, text) => void updateLexiconEntry(entry, text)}
             onDeleteEntry={(entry) => void deleteLexiconEntry(entry)}
           />
+        ) : activeSurface === 'print-check' ? (
+          <PrintCheckSurface
+            labelDocument={labelDocument}
+            currentPrinter={currentPrinter}
+            activeTabDirty={activeTabDirty}
+            report={printCheckReport}
+            overlapSummary={visibleOverlapSummary}
+            saving={saving}
+            printing={printing}
+            onBackToEditor={() => showEditor()}
+            onOpenDocumentSpec={openDocumentSpecPanel}
+            onOpenPrintCalibration={openPrintCalibrationPanel}
+            onSave={() => void saveCurrentTemplate()}
+            onPrint={() => void printCurrent({ markChecked: true })}
+          />
         ) : (
           <>
-            <EditorSidebar
+            <TemplateEditorSidebar
+              activeTab={sidebarTab}
               hasActiveTab={hasActiveTab}
               selectedElementIds={selectedElementIds}
+              bindableSelectedElements={bindableSelectedElements}
               sortedElements={listOrderedElements}
+              templates={templates}
+              visibleTemplates={visibleTemplates}
+              templateQuery={templateQuery}
+              previewTemplateId={previewTemplateId}
+              openedTemplateState={openedTemplateState}
+              lexiconGroups={lexiconGroups}
+              lexiconLibrary={lexiconLibrary}
+              activeGroupId={activeSidebarGroupId}
+              lastLexiconAction={currentTabLexiconAction}
+              bindingOverlayEnabled={bindingOverlayEnabled}
+              bindingOverlayScope={bindingOverlayScope}
+              onSidebarTabChange={handleSidebarTabChange}
+              onActiveGroupChange={setActiveSidebarGroupId}
+              onBindingOverlayEnabledChange={setBindingOverlayEnabled}
+              onBindingOverlayScopeChange={setBindingOverlayScope}
+              onTemplateQueryChange={setTemplateQuery}
               onAddText={() => addNewElement('text')}
               onAddBarcode={() => addNewElement('barcode')}
               onAddQrCode={() => addNewElement('qrcode')}
@@ -2120,118 +3306,154 @@ export default function App() {
               onToggleHidden={toggleHidden}
               onToggleLock={toggleLock}
               onMoveElement={moveElementInList}
+              onToggleGroupForElement={toggleLexiconGroupForElement}
+              onBindGroupToElement={handleLexiconBindGroupToElement}
+              onUnbindGroupFromElement={handleLexiconUnbindGroupFromElement}
+              onApplyEntryToElement={handleLexiconApplyEntryToElement}
+              onUndoLastLexiconAction={undoLastLexiconSidebarAction}
+              onCreateGroup={() => void createSidebarLexiconGroup()}
+              onRenameGroup={(groupId) => void renameSidebarLexiconGroup(groupId)}
+              onDeleteGroup={(groupId) => void deleteSidebarLexiconGroup(groupId)}
+              onMoveGroup={(movingGroupId, anchorGroupId, placement) => void moveSidebarLexiconGroup(movingGroupId, anchorGroupId, placement)}
+              onCreateEntry={(groupId) => void createSidebarLexiconEntry(groupId)}
+              onRenameEntry={(groupId, entryId) => void renameSidebarLexiconEntry(groupId, entryId)}
+              onDeleteEntry={(groupId, entryId) => void deleteSidebarLexiconEntry(groupId, entryId)}
+              onMoveEntry={(sourceGroupId, movingEntryId, targetGroupId, anchorEntryId, placement) => void moveSidebarLexiconEntry(sourceGroupId, movingEntryId, targetGroupId, anchorEntryId, placement)}
+              onMoveTemplate={(movingTemplateId, anchorTemplateId, placement) => void moveSidebarTemplate(movingTemplateId, anchorTemplateId, placement)}
+              onSelectPreviewTemplate={selectPreviewTemplate}
+              onOpenTemplate={(templateId) => void loadTemplate(templateId)}
+              onDuplicateTemplate={(template) => void duplicateTemplate(template)}
+              onRenameTemplate={(template) => void renameTemplate(template)}
+              onDeleteTemplate={(template) => void deleteTemplate(template)}
             />
 
             <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageUpload} />
 
-            <EditorCanvasPanel
-              hasActiveTab={hasActiveTab}
-              labelDocument={labelDocument}
-              activeTemplateId={activeTemplateId}
-              status={status}
-              history={history}
-              selectedElementIds={selectedElementIds}
-              exporting={exporting}
-              canvasScale={canvasScale}
-              horizontalRulerTicks={horizontalRulerTicks}
-              verticalRulerTicks={verticalRulerTicks}
-              canvasWrapRef={canvasWrapRef}
-              canvasRef={canvasRef}
-              resolvedVisibleElements={resolvedVisibleElements}
-              selectedElement={selectedElement}
-              selectionBounds={selectionBounds}
-              snapLines={snapLines}
-              marqueeBounds={marqueeBounds}
-              recentClosedTabsCount={recentClosedTabs.length}
-              onUndo={undo}
-              onRedo={redo}
-              onDuplicateSelected={duplicateSelectedElements}
-              onDeleteSelected={deleteSelectedElements}
-              onCanvasWrapPointerDown={handleCanvasWrapPointerDown}
-              onCanvasWheel={handleCanvasWheel}
-              onCanvasPointerDown={handleCanvasPointerDown}
-              onElementPointerDown={handleElementPointerDown}
-              onResizeHandlePointerDown={handleResizeHandlePointerDown}
-              onRotatePointerDown={handleRotatePointerDown}
-              onCreateFreshDocument={createFreshDocument}
-              onImportDdl={() => ddlInputRef.current?.click()}
-              onReopenLastClosedTab={reopenLastClosedTab}
-            />
+            {sidebarTab === 'templates' ? (
+              <TemplatePreviewPanel
+                previewTemplateId={previewTemplateId}
+                previewTemplate={previewTemplateRecord}
+                loading={previewTemplateLoading}
+                openedState={previewTemplateOpenState}
+                onEditTemplate={(templateId) => {
+                  void loadTemplate(templateId, { forceSidebarTab: 'elements' })
+                }}
+              />
+            ) : (
+              <EditorCanvasPanel
+                hasActiveTab={hasActiveTab}
+                labelDocument={labelDocument}
+                activeTemplateId={activeTemplateId}
+                status={status}
+                history={history}
+                selectedElementIds={selectedElementIds}
+                exporting={exporting}
+                canvasScale={canvasScale}
+                horizontalRulerTicks={horizontalRulerTicks}
+                verticalRulerTicks={verticalRulerTicks}
+                canvasWrapRef={canvasWrapRef}
+                canvasRef={canvasRef}
+                resolvedVisibleElements={resolvedVisibleElements}
+                selectedElement={selectedElement}
+                selectionBounds={selectionBounds}
+                snapLines={snapLines}
+                marqueeBounds={marqueeBounds}
+                bindingOverlayElements={bindingOverlayElements}
+                inlineEditingElement={inlineEditingElement}
+                inlineEditingValue={inlineEditorState?.draft ?? ''}
+                recentClosedTabsCount={recentClosedTabs.length}
+                onUndo={undo}
+                onRedo={redo}
+                onDuplicateSelected={duplicateSelectedElements}
+                onDeleteSelected={deleteSelectedElements}
+                onCanvasWrapPointerDown={handleCanvasWrapPointerDown}
+                onCanvasWheel={handleCanvasWheel}
+                onCanvasPointerDown={handleCanvasPointerDown}
+                onElementPointerDown={handleElementPointerDown}
+                onElementDoubleClick={handleElementDoubleClick}
+                onResizeHandlePointerDown={handleResizeHandlePointerDown}
+                onRotatePointerDown={handleRotatePointerDown}
+                onInlineEditorChange={handleInlineEditorChange}
+                onInlineEditorCommit={commitInlineEditor}
+                onInlineEditorCancel={cancelInlineEditor}
+                onCreateFreshDocument={createFreshDocument}
+                onImportDdl={() => ddlInputRef.current?.click()}
+                onReopenLastClosedTab={reopenLastClosedTab}
+                onBindGroupToElement={handleLexiconBindGroupToElement}
+                onApplyEntryToElement={handleLexiconApplyEntryToElement}
+              />
+            )}
 
-            <aside className="inspector object-panel">
-              {!hasActiveTab ? (
-                <p className="empty-note">打开一个标签后，这里会显示元素属性和精确调整项。</p>
-              ) : selectedElementIds.length === 0 ? (
-                <p className="empty-note">可单选、框选、按住 Ctrl 多选，再拖拽、缩放、旋转或用键盘微调。</p>
-              ) : selectedElement ? (
-                <ElementInspector
-                  element={selectedElement}
-                  layerCount={labelDocument.elements.length}
-                  onNameChange={(name) => updateElementName(selectedElement.id, name)}
-                  onPatch={updateSelectedElement}
-                  onBringForward={() => reorderSelected('forward')}
-                  onSendBackward={() => reorderSelected('backward')}
-                  onBringToFront={() => reorderSelected('front')}
-                  onSendToBack={() => reorderSelected('back')}
-                  onToggleLock={() => toggleLock(selectedElement.id)}
-                  onToggleHidden={() => toggleHidden(selectedElement.id)}
-                />
-              ) : (
-                <MultiSelectionInspector
-                  count={selectedElementIds.length}
-                  onBringForward={() => reorderSelected('forward')}
-                  onSendBackward={() => reorderSelected('backward')}
-                  onBringToFront={() => reorderSelected('front')}
-                  onSendToBack={() => reorderSelected('back')}
-                />
-              )}
-            </aside>
+            {sidebarTab === 'templates' ? null : activeEditorPanel === 'document-spec' ? (
+              <DocumentSpecPanel
+                open
+                labelDocument={labelDocument}
+                specPresets={documentSpecPresets}
+                activeSourcePreset={activeSourcePreset}
+                sourcePresetChanged={sourcePresetChanged}
+                onDocumentFieldChange={setDocumentField}
+                onApplyPreset={applyDocumentSpecPreset}
+                onSaveAsPreset={() => void saveCurrentDocumentSpecAsPreset()}
+                onSavePresetEdit={(preset, nextName, nextNotes) => void saveDocumentSpecPresetEdit(preset, nextName, nextNotes)}
+                onArchivePreset={(preset) => void toggleArchiveDocumentSpecPreset(preset)}
+                onToggleHiddenPreset={(preset) => void toggleHiddenDocumentSpecPreset(preset)}
+                onDeletePreset={(preset) => void removeDocumentSpecPreset(preset)}
+              />
+            ) : activeEditorPanel === 'print-calibration' ? (
+              <PrintCalibrationPanel
+                open
+                labelDocument={labelDocument}
+                currentPrinter={currentPrinter}
+                calibrationLabel={printCheckReport.calibrationLabel}
+                calibrationProfiles={printerCalibrationProfiles}
+                refreshingPrinters={refreshingPrinters}
+                onDocumentFieldChange={updateCalibrationField}
+                onCalibrationProfileChange={selectCalibrationProfile}
+                onRefreshPrinters={() => void refreshPrinters()}
+                onMarkCalibrationSaved={() => void saveCalibration('update-current')}
+                onSaveCalibrationAsNew={() => void saveCalibration('save-as-new')}
+                onRenameCalibration={() => void saveCalibration('rename-current')}
+                onSetDefaultCalibration={() => void setSelectedCalibrationAsDefault()}
+                onDeleteCalibration={() => void deleteSelectedCalibrationProfile()}
+                onResetCalibration={resetCalibration}
+                onTestPrint={() => void printCurrent({ statusLabel: '测试打印已发送到设备。' })}
+              />
+            ) : (
+              <aside className="inspector object-panel">
+                {!hasActiveTab ? (
+                  <p className="empty-note">打开一个标签后，这里会显示元素属性和精确调整项。</p>
+                ) : selectedElementIds.length === 0 ? (
+                  <p className="empty-note">可单选、框选、按住 Ctrl 多选，再拖拽、缩放、旋转或用键盘微调。</p>
+                ) : selectedElement ? (
+                  <ElementInspector
+                    element={selectedElement}
+                    layerCount={labelDocument.elements.length}
+                    onNameChange={(name) => updateElementName(selectedElement.id, name)}
+                    onPatch={updateSelectedElement}
+                    onBringForward={() => reorderSelected('forward')}
+                    onSendBackward={() => reorderSelected('backward')}
+                    onBringToFront={() => reorderSelected('front')}
+                    onSendToBack={() => reorderSelected('back')}
+                    onToggleLock={() => toggleLock(selectedElement.id)}
+                    onToggleHidden={() => toggleHidden(selectedElement.id)}
+                  />
+                ) : (
+                  <MultiSelectionInspector
+                    count={selectedElementIds.length}
+                    onBringForward={() => reorderSelected('forward')}
+                    onSendBackward={() => reorderSelected('backward')}
+                    onBringToFront={() => reorderSelected('front')}
+                    onSendToBack={() => reorderSelected('back')}
+                  />
+                )}
+              </aside>
+            )}
           </>
         )}
       </main>
 
-      <ContentPicker
-        open={contentPickerOpen}
-        position={contentPickerPosition}
-        element={selectedElement}
-        groups={boundLexiconGroups}
-        onPositionChange={setContentPickerPosition}
-        onClose={() => setContentPickerOpen(false)}
-        onApply={applySuggestionToSelectedElement}
-      />
-
-      <GroupBindingPanel
-        open={groupBinderOpen}
-        position={groupBinderPosition}
-        selectedElements={bindableSelectedElements}
-        groups={lexiconGroups}
-        query={groupBinderQuery}
-        onQueryChange={setGroupBinderQuery}
-        onPositionChange={setGroupBinderPosition}
-        onClose={() => setGroupBinderOpen(false)}
-        onToggleGroup={toggleLexiconGroupForSelection}
-        onDefaultGroupChange={setSelectedElementDefaultLexiconGroup}
-        onRefresh={() => void refreshLexiconGroups()}
-      />
-
       <input ref={ddlInputRef} type="file" accept=".ddl,.xml,.json,.yblabel.json,text/xml,application/json" hidden onChange={handleDdlUpload} />
-
-      <DocumentPrintDialog
-        open={showDocumentDialog && hasActiveTab}
-        labelDocument={labelDocument}
-        appState={appState}
-        currentPrinter={currentPrinter}
-        overlapSummary={visibleOverlapSummary}
-        refreshingPrinters={refreshingPrinters}
-        saving={saving}
-        printing={printing}
-        onClose={() => setShowDocumentDialog(false)}
-        onDocumentFieldChange={setDocumentField}
-        onRefreshPrinters={() => void refreshPrinters()}
-        onSaveCurrentTemplate={() => void saveCurrentTemplate()}
-        onSaveAsTemplate={() => void saveAsTemplate()}
-        onPrintCurrent={printCurrent}
-      />
+      <input ref={backupInputRef} type="file" accept=".zip,.yibolabel-backup,application/zip" hidden onChange={handleBackupRestoreUpload} />
 
       <ExportDialog
         open={showExportDialog && hasActiveTab}

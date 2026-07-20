@@ -1,5 +1,6 @@
-import type { LabelDocument, LabelElement } from '../types'
-import { assignLayerOrder, clamp, roundTo, sortElements } from './labelDocument'
+import type { BarcodeElement, LabelDocument, LabelElement, QrCodeElement, TextElement } from '../types'
+import { assignLayerOrder, clamp, pointsToMm, roundTo, sortElements } from './labelDocument'
+import { getBarcodeLayout, getQrCodeLayout } from './codeElementLayout'
 
 export const snapDistanceMm = 0.8
 
@@ -222,6 +223,37 @@ export function reorderElements(
   return assignLayerOrder(result)
 }
 
+export function getElementPrintBounds(element: LabelElement): Bounds {
+  if (element.type === 'text') {
+    return createTextPrintBounds(element)
+  }
+
+  if (element.type === 'barcode') {
+    return createCodePrintBounds(element, getBarcodeLayout(element, element.width, element.height, 1))
+  }
+
+  if (element.type === 'qrcode') {
+    return createCodePrintBounds(element, getQrCodeLayout(element, element.width, element.height, 1))
+  }
+
+  return getElementBounds(element)
+}
+
+export function getElementOverlapRegion(left: LabelElement, right: LabelElement): Bounds | null {
+  const leftBounds = getElementPrintBounds(left)
+  const rightBounds = getElementPrintBounds(right)
+  const overlap = intersectBounds(leftBounds, rightBounds)
+  if (!overlap) {
+    return null
+  }
+
+  if (!isMeaningfulOverlap(left, right, overlap, leftBounds, rightBounds)) {
+    return null
+  }
+
+  return overlap
+}
+
 export type ElementOverlapSummary = {
   overlapCount: number
   barcodeOrQrOverlapCount: number
@@ -233,10 +265,9 @@ export function getVisibleElementOverlapSummary(elements: LabelElement[]): Eleme
 
   for (let leftIndex = 0; leftIndex < elements.length - 1; leftIndex += 1) {
     const left = elements[leftIndex]
-    const leftBounds = getElementBounds(left)
     for (let rightIndex = leftIndex + 1; rightIndex < elements.length; rightIndex += 1) {
       const right = elements[rightIndex]
-      if (!boundsIntersect(leftBounds, getElementBounds(right))) {
+      if (!getElementOverlapRegion(left, right)) {
         continue
       }
 
@@ -249,3 +280,82 @@ export function getVisibleElementOverlapSummary(elements: LabelElement[]): Eleme
 
   return { overlapCount, barcodeOrQrOverlapCount }
 }
+
+function createTextPrintBounds(element: TextElement): Bounds {
+  const contentHeight = clamp(roundTo(pointsToMm(element.fontSize) * 1.18, 0.1), minVisualPrintSizeMm, element.height)
+  return createBounds(element.x, element.y, element.width, contentHeight)
+}
+
+function createCodePrintBounds(
+  element: BarcodeElement | QrCodeElement,
+  layout: {
+    code: { x: number; y: number; width: number; height: number }
+    text: { x: number; y: number; width: number; height: number } | null
+  },
+): Bounds {
+  const parts = [layout.code, ...(layout.text ? [layout.text] : [])]
+  const left = Math.min(...parts.map((part) => part.x))
+  const top = Math.min(...parts.map((part) => part.y))
+  const right = Math.max(...parts.map((part) => part.x + part.width))
+  const bottom = Math.max(...parts.map((part) => part.y + part.height))
+  return createBounds(element.x + left, element.y + top, right - left, bottom - top)
+}
+
+function createBounds(left: number, top: number, width: number, height: number): Bounds {
+  const safeWidth = Math.max(0, width)
+  const safeHeight = Math.max(0, height)
+  return {
+    left,
+    top,
+    right: left + safeWidth,
+    bottom: top + safeHeight,
+    width: safeWidth,
+    height: safeHeight,
+    centerX: left + safeWidth / 2,
+    centerY: top + safeHeight / 2,
+  }
+}
+
+function intersectBounds(left: Bounds, right: Bounds): Bounds | null {
+  const overlapLeft = Math.max(left.left, right.left)
+  const overlapTop = Math.max(left.top, right.top)
+  const overlapRight = Math.min(left.right, right.right)
+  const overlapBottom = Math.min(left.bottom, right.bottom)
+  if (overlapRight <= overlapLeft || overlapBottom <= overlapTop) {
+    return null
+  }
+
+  return createBounds(overlapLeft, overlapTop, overlapRight - overlapLeft, overlapBottom - overlapTop)
+}
+
+function isMeaningfulOverlap(
+  leftElement: LabelElement,
+  rightElement: LabelElement,
+  overlap: Bounds,
+  leftBounds: Bounds,
+  rightBounds: Bounds,
+) {
+  const includesCode =
+    leftElement.type === 'barcode'
+    || leftElement.type === 'qrcode'
+    || rightElement.type === 'barcode'
+    || rightElement.type === 'qrcode'
+  if (includesCode) {
+    return true
+  }
+
+  const linePair = leftElement.type === 'line' || rightElement.type === 'line'
+  if (!linePair) {
+    return true
+  }
+
+  const overlapArea = overlap.width * overlap.height
+  const smallerArea = Math.max(
+    minVisualPrintSizeMm * minVisualPrintSizeMm,
+    Math.min(leftBounds.width * leftBounds.height, rightBounds.width * rightBounds.height),
+  )
+  const overlapDepth = Math.min(overlap.width, overlap.height)
+  return overlapArea / smallerArea >= 0.2 || overlapDepth >= 0.9
+}
+
+const minVisualPrintSizeMm = 0.4

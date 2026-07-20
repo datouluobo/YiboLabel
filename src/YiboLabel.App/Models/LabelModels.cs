@@ -8,6 +8,8 @@ public sealed class LabelTemplateSummary
 
     public required string Name { get; init; }
 
+    public int SortOrder { get; init; }
+
     public required DateTimeOffset CreatedAt { get; init; }
 
     public required DateTimeOffset UpdatedAt { get; init; }
@@ -19,11 +21,63 @@ public sealed class LabelTemplateSummary
     public required int ElementCount { get; init; }
 }
 
+public sealed class DocumentSpecPresetSummary
+{
+    public required string Id { get; init; }
+
+    public required string Name { get; init; }
+
+    public required double WidthMm { get; init; }
+
+    public required double HeightMm { get; init; }
+
+    public required double GapMm { get; init; }
+
+    public string? Notes { get; init; }
+
+    public bool IsHidden { get; init; }
+
+    public bool IsArchived { get; init; }
+
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    public required DateTimeOffset UpdatedAt { get; init; }
+
+    public required int ReferenceCount { get; init; }
+}
+
+public sealed class DocumentSpecPresetRecord
+{
+    public required string Id { get; init; }
+
+    public int SchemaVersion { get; init; } = 1;
+
+    public required string Name { get; init; }
+
+    public required double WidthMm { get; init; }
+
+    public required double HeightMm { get; init; }
+
+    public required double GapMm { get; init; }
+
+    public string? Notes { get; init; }
+
+    public bool IsHidden { get; init; }
+
+    public bool IsArchived { get; init; }
+
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    public required DateTimeOffset UpdatedAt { get; init; }
+}
+
 public sealed class LabelTemplateRecord
 {
     public required string Id { get; init; }
 
     public required string Name { get; init; }
+
+    public int SortOrder { get; init; }
 
     public int SchemaVersion { get; init; } = 1;
 
@@ -42,6 +96,10 @@ public sealed class LabelDocument
 
     public required double HeightMm { get; init; }
 
+    public string? SourceSpecId { get; init; }
+
+    public string? SourceSpecName { get; init; }
+
     public string? PrinterDevicePath { get; init; }
 
     public int Copies { get; init; } = 1;
@@ -57,6 +115,16 @@ public sealed class LabelDocument
     public double PrintOffsetXMm { get; init; }
 
     public double PrintOffsetYMm { get; init; }
+
+    public string? CalibrationPrinterDevicePath { get; init; }
+
+    public string? CalibrationProfileId { get; init; }
+
+    public string? PrintCalibrationState { get; init; }
+
+    public string? PrintCalibrationLabel { get; init; }
+
+    public string? LastPrintCheckSignature { get; init; }
 
     public required List<LabelElement> Elements { get; init; }
 }
@@ -169,6 +237,84 @@ public sealed class SaveTemplateRequest
     public required LabelDocument Document { get; init; }
 }
 
+public sealed class SaveDocumentSpecPresetRequest
+{
+    public required string Name { get; init; }
+
+    public required double WidthMm { get; init; }
+
+    public required double HeightMm { get; init; }
+
+    public required double GapMm { get; init; }
+
+    public string? Notes { get; init; }
+}
+
+public sealed class UpdateDocumentSpecPresetRequest
+{
+    public required string Name { get; init; }
+
+    public string? Notes { get; init; }
+
+    public bool IsHidden { get; init; }
+
+    public bool IsArchived { get; init; }
+}
+
+public sealed class PrinterCalibrationRecord
+{
+    public int SchemaVersion { get; init; } = 1;
+
+    public required string Id { get; init; }
+
+    public required string DevicePath { get; init; }
+
+    public required string PrinterName { get; init; }
+
+    public bool IsDefault { get; init; }
+
+    public required string State { get; init; }
+
+    public required string Label { get; init; }
+
+    public required double PrintOffsetXMm { get; init; }
+
+    public required double PrintOffsetYMm { get; init; }
+
+    public required int PrintRotation { get; init; }
+
+    public required double Darkness { get; init; }
+
+    public required bool PrintInvert { get; init; }
+
+    public required DateTimeOffset UpdatedAt { get; init; }
+}
+
+public sealed class SavePrinterCalibrationRequest
+{
+    public string? Id { get; init; }
+
+    public required string DevicePath { get; init; }
+
+    public required string PrinterName { get; init; }
+
+    public bool IsDefault { get; init; }
+
+    public required string State { get; init; }
+
+    public required string Label { get; init; }
+
+    public required double PrintOffsetXMm { get; init; }
+
+    public required double PrintOffsetYMm { get; init; }
+
+    public required int PrintRotation { get; init; }
+
+    public required double Darkness { get; init; }
+
+    public required bool PrintInvert { get; init; }
+}
+
 public sealed class RenameTemplateRequest
 {
     public required string Name { get; init; }
@@ -177,6 +323,13 @@ public sealed class RenameTemplateRequest
 public sealed class DuplicateTemplateRequest
 {
     public string? Name { get; init; }
+}
+
+public sealed class MoveTemplateRequest
+{
+    public required string AnchorId { get; init; }
+
+    public required string Placement { get; init; }
 }
 
 public sealed class PrintRequest
@@ -299,4 +452,13 @@ public sealed class CreateLexiconEntryRequest
 public sealed class UpdateLexiconEntryRequest
 {
     public required string Text { get; init; }
+}
+
+public sealed class MoveLexiconItemRequest
+{
+    public string? AnchorId { get; init; }
+
+    public required string Placement { get; init; }
+
+    public string? TargetGroupId { get; init; }
 }

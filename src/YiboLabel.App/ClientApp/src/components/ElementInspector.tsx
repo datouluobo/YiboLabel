@@ -152,7 +152,7 @@ function TextPreview({ element, canvasScale }: { element: TextElement; canvasSca
 
     context.font = `${fontStyle} ${fontWeight} ${fontSizePx}px ${fontFamily}`
     return context.measureText(element.text || ' ').width
-  }, [availableWidth, element.text, fontSizePx, fontFamily, fontWeight])
+  }, [availableWidth, element.text, fontSizePx, fontFamily, fontStyle, fontWeight])
   const fitScale = clamp(availableWidth / Math.max(1, measuredWidth), 0.55, 1)
   const justifyContent = element.align === 'right' ? 'flex-end' : element.align === 'center' ? 'center' : 'flex-start'
 
@@ -570,14 +570,14 @@ export function ElementInspector({
           <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0, -0.5)}>
             ↑ 0.5
           </button>
+          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0, 0.5)}>
+            ↓ 0.5
+          </button>
           <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(-0.5, 0)}>
             ← 0.5
           </button>
           <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0.5, 0)}>
             → 0.5
-          </button>
-          <button className="mini-button" disabled={geometryLocked} onClick={() => nudge(0, 0.5)}>
-            ↓ 0.5
           </button>
         </div>
       </InspectorSection>

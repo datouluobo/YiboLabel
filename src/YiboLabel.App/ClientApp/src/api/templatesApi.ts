@@ -2,6 +2,7 @@ import type {
   DuplicateTemplateRequest,
   LabelTemplateRecord,
   LabelTemplateSummary,
+  MoveTemplateRequest,
   RenameTemplateRequest,
   SaveTemplateRequest,
 } from '../types'
@@ -29,6 +30,10 @@ export function renameTemplate(id: string, request: RenameTemplateRequest) {
 
 export function duplicateTemplate(id: string, request: DuplicateTemplateRequest) {
   return postJson<LabelTemplateRecord>(`/api/templates/${id}/duplicate`, request)
+}
+
+export function moveTemplate(id: string, request: MoveTemplateRequest) {
+  return postJson<LabelTemplateSummary[]>(`/api/templates/${id}/move`, request)
 }
 
 export function deleteTemplate(id: string) {

@@ -33,6 +33,8 @@ export const createBlankDocument = (name = '未命名标签'): LabelDocument =>
     name,
     widthMm: 40,
     heightMm: 30,
+    sourceSpecId: null,
+    sourceSpecName: '默认 40 x 30 mm',
     copies: 1,
     darkness: 8,
     gapMm: 2,
@@ -40,6 +42,11 @@ export const createBlankDocument = (name = '未命名标签'): LabelDocument =>
     printInvert: false,
     printOffsetXMm: 0,
     printOffsetYMm: 0,
+    calibrationPrinterDevicePath: null,
+    calibrationProfileId: null,
+    printCalibrationState: 'unset',
+    printCalibrationLabel: null,
+    lastPrintCheckSignature: null,
     elements: [
       {
         id: createId(),
@@ -98,6 +105,8 @@ export function normalizeDocument(document: LabelDocument): LabelDocument {
     name: document.name || '未命名标签',
     widthMm,
     heightMm,
+    sourceSpecId: document.sourceSpecId ?? null,
+    sourceSpecName: document.sourceSpecName?.trim() || null,
     copies: clamp(Math.round(document.copies || 1), 1, 99),
     darkness: clamp(roundTo(document.darkness || 8, 0.1), 1, 15),
     gapMm: clamp(roundTo(document.gapMm || 2, 0.1), 0, 20),
@@ -105,6 +114,11 @@ export function normalizeDocument(document: LabelDocument): LabelDocument {
     printInvert: Boolean(document.printInvert),
     printOffsetXMm: clamp(roundTo(document.printOffsetXMm ?? 0, 0.1), -20, 20),
     printOffsetYMm: clamp(roundTo(document.printOffsetYMm ?? 0, 0.1), -20, 20),
+    calibrationPrinterDevicePath: document.calibrationPrinterDevicePath ?? null,
+    calibrationProfileId: document.calibrationProfileId ?? null,
+    printCalibrationState: normalizePrintCalibrationState(document.printCalibrationState),
+    printCalibrationLabel: document.printCalibrationLabel?.trim() || null,
+    lastPrintCheckSignature: document.lastPrintCheckSignature?.trim() || null,
     elements: [],
   }
 
@@ -342,6 +356,14 @@ export function normalizeRotation(rotation: number) {
 export function normalizePrintRotation(rotation: number | undefined) {
   const normalized = ((Math.round((rotation ?? 0) / 90) * 90) % 360 + 360) % 360
   return normalized
+}
+
+function normalizePrintCalibrationState(state: LabelDocument['printCalibrationState']) {
+  if (state === 'default' || state === 'calibrated' || state === 'unconfirmed') {
+    return state
+  }
+
+  return 'unset'
 }
 
 export function roundTo(value: number, step: number) {

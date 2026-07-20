@@ -21,6 +21,7 @@ export interface AppStateResponse {
 export interface LabelTemplateSummary {
   id: string
   name: string
+  sortOrder: number
   createdAt: string
   updatedAt: string
   widthMm: number
@@ -32,15 +33,47 @@ export interface LabelTemplateRecord {
   id: string
   schemaVersion: number
   name: string
+  sortOrder: number
   createdAt: string
   updatedAt: string
   document: LabelDocument
+}
+
+export interface DocumentSpecPresetSummary {
+  id: string
+  name: string
+  widthMm: number
+  heightMm: number
+  gapMm: number
+  notes?: string | null
+  isHidden: boolean
+  isArchived: boolean
+  createdAt: string
+  updatedAt: string
+  referenceCount: number
+}
+
+export interface SaveDocumentSpecPresetRequest {
+  name: string
+  widthMm: number
+  heightMm: number
+  gapMm: number
+  notes?: string | null
+}
+
+export interface UpdateDocumentSpecPresetRequest {
+  name: string
+  notes?: string | null
+  isHidden: boolean
+  isArchived: boolean
 }
 
 export interface LabelDocument {
   name: string
   widthMm: number
   heightMm: number
+  sourceSpecId?: string | null
+  sourceSpecName?: string | null
   printerDevicePath?: string | null
   copies: number
   darkness: number
@@ -49,6 +82,11 @@ export interface LabelDocument {
   printInvert: boolean
   printOffsetXMm: number
   printOffsetYMm: number
+  calibrationPrinterDevicePath?: string | null
+  calibrationProfileId?: string | null
+  printCalibrationState?: 'default' | 'calibrated' | 'unconfirmed' | 'unset'
+  printCalibrationLabel?: string | null
+  lastPrintCheckSignature?: string | null
   elements: LabelElement[]
 }
 
@@ -134,6 +172,11 @@ export interface DuplicateTemplateRequest {
   name?: string
 }
 
+export interface MoveTemplateRequest {
+  anchorId: string
+  placement: 'before' | 'after'
+}
+
 export interface PrintRequest {
   document: LabelDocument
   devicePathOverride?: string
@@ -144,6 +187,36 @@ export interface PrintResult {
   copies: number
   tsplPath: string
   agentOutput: string
+}
+
+export interface PrinterCalibrationRecord {
+  schemaVersion: number
+  id: string
+  devicePath: string
+  printerName: string
+  isDefault: boolean
+  state: 'default' | 'calibrated' | 'unconfirmed' | 'unset'
+  label: string
+  printOffsetXMm: number
+  printOffsetYMm: number
+  printRotation: number
+  darkness: number
+  printInvert: boolean
+  updatedAt: string
+}
+
+export interface SavePrinterCalibrationRequest {
+  id?: string | null
+  devicePath: string
+  printerName: string
+  isDefault?: boolean
+  state: 'default' | 'calibrated' | 'unconfirmed' | 'unset'
+  label: string
+  printOffsetXMm: number
+  printOffsetYMm: number
+  printRotation: number
+  darkness: number
+  printInvert: boolean
 }
 
 export interface LexiconGroupSummary {
@@ -190,4 +263,21 @@ export interface LexiconSuggestion {
   groupName: string
   lexiconId: string
   lexiconName: string
+}
+
+export interface DataDirectoryInfo {
+  path: string
+}
+
+export interface DataBackupResult {
+  fileName: string
+  path: string
+  createdAt: string
+}
+
+export interface DataRestoreResult {
+  restored: boolean
+  sourceFileName: string
+  preRestoreBackupPath: string
+  preRestoreBackupFileName: string
 }

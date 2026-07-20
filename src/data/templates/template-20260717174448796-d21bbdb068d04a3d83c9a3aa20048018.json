@@ -2,12 +2,15 @@
   "schemaVersion": 1,
   "id": "template-20260717174448796-d21bbdb068d04a3d83c9a3aa20048018",
   "name": "\u5FEB\u901F\u6807\u7B7E",
+  "sortOrder": 4,
   "createdAt": "2026-07-17T17:44:48.796489+08:00",
   "updatedAt": "2026-07-17T17:44:48.796489+08:00",
   "document": {
     "name": "\u5FEB\u901F\u6807\u7B7E",
     "widthMm": 40,
     "heightMm": 30,
+    "sourceSpecId": null,
+    "sourceSpecName": null,
     "printerDevicePath": null,
     "copies": 1,
     "darkness": 8,
@@ -16,6 +19,11 @@
     "printInvert": false,
     "printOffsetXMm": 0,
     "printOffsetYMm": 0,
+    "calibrationPrinterDevicePath": null,
+    "calibrationProfileId": null,
+    "printCalibrationState": null,
+    "printCalibrationLabel": null,
+    "lastPrintCheckSignature": null,
     "elements": [
       {
         "text": "YiboLabel",

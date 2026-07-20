@@ -37,8 +37,6 @@ public sealed class LexiconStore
                 Name = group.Name,
                 EntryCount = group.Entries.Count
             }))
-            .OrderBy(group => group.LexiconName, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(group => group.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
     }
 
@@ -198,6 +196,24 @@ public sealed class LexiconStore
         return removed;
     }
 
+    public async Task<bool> MoveGroupAsync(string lexiconId, string groupId, MoveLexiconItemRequest request, CancellationToken cancellationToken)
+    {
+        var library = await LoadAsync(cancellationToken);
+        var lexicon = library.Lexicons.FirstOrDefault(item => string.Equals(item.Id, lexiconId, StringComparison.OrdinalIgnoreCase));
+        if (lexicon is null)
+        {
+            return false;
+        }
+
+        var moved = MoveItem(lexicon.Groups, groupId, request.AnchorId!, request.Placement, group => group.Id);
+        if (moved)
+        {
+            await TouchAndSaveAsync(library, lexicon, cancellationToken);
+        }
+
+        return moved;
+    }
+
     public async Task<LexiconEntry?> CreateEntryAsync(string lexiconId, string groupId, CreateLexiconEntryRequest request, CancellationToken cancellationToken)
     {
         var library = await LoadAsync(cancellationToken);
@@ -270,6 +286,28 @@ public sealed class LexiconStore
         }
 
         return removed;
+    }
+
+    public async Task<bool> MoveEntryAsync(string lexiconId, string groupId, string entryId, MoveLexiconItemRequest request, CancellationToken cancellationToken)
+    {
+        var library = await LoadAsync(cancellationToken);
+        var lexicon = library.Lexicons.FirstOrDefault(item => string.Equals(item.Id, lexiconId, StringComparison.OrdinalIgnoreCase));
+        var sourceGroup = lexicon?.Groups.FirstOrDefault(item => string.Equals(item.Id, groupId, StringComparison.OrdinalIgnoreCase));
+        var targetGroupId = string.IsNullOrWhiteSpace(request.TargetGroupId) ? groupId : request.TargetGroupId;
+        var targetGroup = lexicon?.Groups.FirstOrDefault(item => string.Equals(item.Id, targetGroupId, StringComparison.OrdinalIgnoreCase));
+        if (lexicon is null || sourceGroup is null || targetGroup is null)
+        {
+            return false;
+        }
+
+        var moved = MoveEntry(sourceGroup, targetGroup, entryId, request.AnchorId, request.Placement);
+        if (moved)
+        {
+            targetGroup.UpdatedAt = DateTimeOffset.Now;
+            await TouchAndSaveAsync(library, lexicon, sourceGroup, cancellationToken);
+        }
+
+        return moved;
     }
 
     private async Task<LexiconLibrary> LoadAsync(CancellationToken cancellationToken)
@@ -356,6 +394,68 @@ public sealed class LexiconStore
     {
         var safe = string.Concat(text.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')).Trim('-');
         return string.IsNullOrWhiteSpace(safe) ? Guid.NewGuid().ToString("N") : safe;
+    }
+
+    private static bool MoveItem<T>(List<T> items, string movingId, string anchorId, string placement, Func<T, string> getId)
+    {
+        if (string.Equals(movingId, anchorId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var movingIndex = items.FindIndex(item => string.Equals(getId(item), movingId, StringComparison.OrdinalIgnoreCase));
+        var anchorIndex = items.FindIndex(item => string.Equals(getId(item), anchorId, StringComparison.OrdinalIgnoreCase));
+        if (movingIndex < 0 || anchorIndex < 0)
+        {
+            return false;
+        }
+
+        var movingItem = items[movingIndex];
+        items.RemoveAt(movingIndex);
+        var withoutMovingAnchorIndex = items.FindIndex(item => string.Equals(getId(item), anchorId, StringComparison.OrdinalIgnoreCase));
+        if (withoutMovingAnchorIndex < 0)
+        {
+            return false;
+        }
+
+        var insertIndex = string.Equals(placement, "after", StringComparison.OrdinalIgnoreCase)
+            ? withoutMovingAnchorIndex + 1
+            : withoutMovingAnchorIndex;
+        items.Insert(Math.Clamp(insertIndex, 0, items.Count), movingItem);
+        return true;
+    }
+
+    private static bool MoveEntry(LexiconGroup sourceGroup, LexiconGroup targetGroup, string entryId, string? anchorId, string placement)
+    {
+        var movingIndex = sourceGroup.Entries.FindIndex(entry => string.Equals(entry.Id, entryId, StringComparison.OrdinalIgnoreCase));
+        if (movingIndex < 0)
+        {
+            return false;
+        }
+
+        var movingEntry = sourceGroup.Entries[movingIndex];
+        if (string.Equals(sourceGroup.Id, targetGroup.Id, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(entryId, anchorId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        sourceGroup.Entries.RemoveAt(movingIndex);
+        var insertIndex = targetGroup.Entries.Count;
+        if (!string.IsNullOrWhiteSpace(anchorId))
+        {
+            var anchorIndex = targetGroup.Entries.FindIndex(entry => string.Equals(entry.Id, anchorId, StringComparison.OrdinalIgnoreCase));
+            if (anchorIndex < 0)
+            {
+                sourceGroup.Entries.Insert(movingIndex, movingEntry);
+                return false;
+            }
+
+            insertIndex = string.Equals(placement, "after", StringComparison.OrdinalIgnoreCase) ? anchorIndex + 1 : anchorIndex;
+        }
+
+        targetGroup.Entries.Insert(Math.Clamp(insertIndex, 0, targetGroup.Entries.Count), movingEntry);
+        return true;
     }
 
     private static string CreateId(string text)

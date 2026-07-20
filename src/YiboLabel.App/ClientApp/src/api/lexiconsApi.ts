@@ -35,6 +35,10 @@ export function deleteLexiconGroup(lexiconId: string, groupId: string) {
   return deleteJson(`/api/lexicons/${lexiconId}/groups/${groupId}`)
 }
 
+export function moveLexiconGroup(lexiconId: string, groupId: string, anchorId: string, placement: 'before' | 'after') {
+  return postJson<void>(`/api/lexicons/${lexiconId}/groups/${groupId}/move`, { anchorId, placement })
+}
+
 export function createLexiconEntry(lexiconId: string, groupId: string, text: string) {
   return postJson<LexiconEntry>(`/api/lexicons/${lexiconId}/groups/${groupId}/entries`, { text })
 }
@@ -45,4 +49,15 @@ export function updateLexiconEntry(lexiconId: string, groupId: string, entryId: 
 
 export function deleteLexiconEntry(lexiconId: string, groupId: string, entryId: string) {
   return deleteJson(`/api/lexicons/${lexiconId}/groups/${groupId}/entries/${entryId}`)
+}
+
+export function moveLexiconEntry(
+  lexiconId: string,
+  groupId: string,
+  entryId: string,
+  anchorId: string | null,
+  placement: 'before' | 'after',
+  targetGroupId?: string,
+) {
+  return postJson<void>(`/api/lexicons/${lexiconId}/groups/${groupId}/entries/${entryId}/move`, { anchorId, placement, targetGroupId })
 }
