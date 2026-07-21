@@ -4,7 +4,7 @@ if (args.Length == 2 && string.Equals(args[0], "probe", StringComparison.Ordinal
 {
     try
     {
-        using var channel = DlabelPrinterChannel.Open(args[1]);
+        using var channel = VendorDllPrinterChannel.Open(args[1]);
         Console.WriteLine("Printer USB connection is available.");
         return 0;
     }
@@ -33,7 +33,7 @@ if (!File.Exists(tsplPath))
 try
 {
     var payload = await File.ReadAllBytesAsync(tsplPath);
-    using var channel = DlabelPrinterChannel.Open(devicePath);
+    using var channel = VendorDllPrinterChannel.Open(devicePath);
     channel.SendRaw(payload);
     Console.WriteLine("Print agent sent payload successfully.");
     return 0;

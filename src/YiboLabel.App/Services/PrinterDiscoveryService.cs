@@ -5,15 +5,14 @@ namespace YiboLabel.App.Services;
 
 public sealed class PrinterDiscoveryService
 {
-    private const string DlabelPropertyJson = @"C:\Users\Administrator\AppData\Local\Dlabel\PrinterDefaultProperty.json";
-    private const string PrinterRegistryKey = @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Print\Printers\HB-Q2(USB)\PrinterDriverData";
+    private const string PrintersRegistryKey = @"SYSTEM\CurrentControlSet\Control\Print\Printers";
 
     public async Task<IReadOnlyList<PrinterEndpoint>> GetKnownPrintersAsync(PrintAgentClient printAgentClient, CancellationToken cancellationToken)
     {
         var discovered = new List<PrinterEndpoint>();
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var candidate in ReadCandidatesFromDlabelConfig())
+        foreach (var candidate in ReadCandidatesFromVendorConfig(GetVendorPrinterPropertyJsonPath()))
         {
             if (seenPaths.Add(candidate.DevicePath))
             {
@@ -21,17 +20,12 @@ public sealed class PrinterDiscoveryService
             }
         }
 
-        var registryPath = Registry.GetValue(PrinterRegistryKey, "DevicePath", null) as string;
-        if (!string.IsNullOrWhiteSpace(registryPath) && seenPaths.Add(registryPath))
+        foreach (var candidate in ReadCandidatesFromPrinterRegistry())
         {
-            discovered.Add(new PrinterEndpoint
+            if (seenPaths.Add(candidate.DevicePath))
             {
-                Id = "hb-q2-usb-registry",
-                DisplayName = "HB-Q2 (USB)",
-                DevicePath = registryPath,
-                DriverName = "HB-Q2(USB) Driver",
-                IsAvailable = false
-            });
+                discovered.Add(candidate);
+            }
         }
 
         var probes = discovered.Select(async printer =>
@@ -51,14 +45,22 @@ public sealed class PrinterDiscoveryService
         return await Task.WhenAll(probes);
     }
 
-    private static IEnumerable<PrinterEndpoint> ReadCandidatesFromDlabelConfig()
+    internal static string GetVendorPrinterPropertyJsonPath()
     {
-        if (!File.Exists(DlabelPropertyJson))
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Dlabel",
+            "PrinterDefaultProperty.json");
+    }
+
+    internal static IEnumerable<PrinterEndpoint> ReadCandidatesFromVendorConfig(string vendorPrinterPropertyJson)
+    {
+        if (!File.Exists(vendorPrinterPropertyJson))
         {
             yield break;
         }
 
-        using var stream = File.OpenRead(DlabelPropertyJson);
+        using var stream = File.OpenRead(vendorPrinterPropertyJson);
         using var document = System.Text.Json.JsonDocument.Parse(stream);
 
         foreach (var element in document.RootElement.EnumerateArray())
@@ -76,15 +78,43 @@ public sealed class PrinterDiscoveryService
             }
 
             var displayName = element.TryGetProperty("printModel", out var modelProperty) && modelProperty.ValueKind == System.Text.Json.JsonValueKind.String
-                ? modelProperty.GetString() ?? "Dlabel USB Printer"
-                : "Dlabel USB Printer";
+                ? modelProperty.GetString() ?? "USB Printer"
+                : "USB Printer";
 
             yield return new PrinterEndpoint
             {
                 Id = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(devicePath)).ToLowerInvariant(),
                 DisplayName = displayName,
                 DevicePath = devicePath,
-                DriverName = "Dlabel USB",
+                DriverName = "USB Direct",
+                IsAvailable = false
+            };
+        }
+    }
+
+    private static IEnumerable<PrinterEndpoint> ReadCandidatesFromPrinterRegistry()
+    {
+        using var printersKey = Registry.LocalMachine.OpenSubKey(PrintersRegistryKey);
+        if (printersKey is null)
+        {
+            yield break;
+        }
+
+        foreach (var printerName in printersKey.GetSubKeyNames())
+        {
+            using var driverDataKey = printersKey.OpenSubKey($@"{printerName}\PrinterDriverData");
+            var devicePath = driverDataKey?.GetValue("DevicePath") as string;
+            if (string.IsNullOrWhiteSpace(devicePath))
+            {
+                continue;
+            }
+
+            yield return new PrinterEndpoint
+            {
+                Id = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes($"registry:{printerName}:{devicePath}")).ToLowerInvariant(),
+                DisplayName = printerName,
+                DevicePath = devicePath,
+                DriverName = "Windows printer driver",
                 IsAvailable = false
             };
         }

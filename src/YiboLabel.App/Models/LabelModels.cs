@@ -223,11 +223,54 @@ public sealed class PrinterEndpoint
 
     public required string DevicePath { get; init; }
 
-    public string DriverName { get; init; } = "Dlabel USB";
+    public string DriverName { get; init; } = "USB Direct";
 
     public bool IsAvailable { get; init; }
 
     public string StatusMessage { get; init; } = "状态未知";
+}
+
+public sealed class PrintDiagnosticReport
+{
+    public required DateTimeOffset CheckedAt { get; init; }
+
+    public required string VendorConfigPath { get; init; }
+
+    public required string VendorDllDirectory { get; init; }
+
+    public required string VendorDllPath { get; init; }
+
+    public required List<PrintDiagnosticTarget> Targets { get; init; }
+}
+
+public sealed class PrintDiagnosticTarget
+{
+    public required string Id { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    public required string ChannelKind { get; init; }
+
+    public required string Identity { get; init; }
+
+    public required string Source { get; init; }
+
+    public bool IsAvailable { get; init; }
+
+    public required string Status { get; init; }
+
+    public required List<PrintDiagnosticStep> Steps { get; init; }
+}
+
+public sealed class PrintDiagnosticStep
+{
+    public required string Stage { get; init; }
+
+    public required string Status { get; init; }
+
+    public required string Message { get; init; }
+
+    public string? Detail { get; init; }
 }
 
 public sealed class SaveTemplateRequest

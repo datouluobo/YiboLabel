@@ -80,8 +80,44 @@ const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Unin
 
 try
 {
-    var installRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", AppName);
-    var installDir = Path.Combine(installRoot, Version);
+    var defaultInstallRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", AppName);
+    string? installRoot = null;
+    Exception? dialogError = null;
+    var dialogThread = new Thread(() =>
+    {
+        try
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            installRoot = ShowInstallPathDialog(defaultInstallRoot);
+        }
+        catch (Exception ex)
+        {
+            dialogError = ex;
+        }
+    });
+    dialogThread.SetApartmentState(ApartmentState.STA);
+    dialogThread.Start();
+    dialogThread.Join();
+
+    if (dialogError is not null)
+    {
+        throw dialogError;
+    }
+
+    if (installRoot is null)
+    {
+        return;
+    }
+
+    installRoot = Path.GetFullPath(Environment.ExpandEnvironmentVariables(installRoot.Trim()));
+    if (string.IsNullOrWhiteSpace(installRoot))
+    {
+        throw new InvalidOperationException("Install location cannot be empty.");
+    }
+
+    var installDir = Path.Combine(installRoot, "app");
+    Directory.CreateDirectory(installRoot);
     Directory.CreateDirectory(installDir);
 
     var tempZip = Path.Combine(Path.GetTempPath(), `$"YiboLabel-{Version}-{Guid.NewGuid():N}.zip");
@@ -105,18 +141,115 @@ try
     var desktopShortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "YiboLabel.lnk");
     var startMenuDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), AppName);
     Directory.CreateDirectory(startMenuDir);
-    CreateShortcut(desktopShortcut, exePath, installDir, "YiboLabel label printing tool");
-    CreateShortcut(Path.Combine(startMenuDir, "YiboLabel.lnk"), exePath, installDir, "YiboLabel label printing tool");
-    CreateShortcut(Path.Combine(startMenuDir, "Uninstall YiboLabel.lnk"), Path.Combine(installRoot, "Uninstall.cmd"), installRoot, "Uninstall YiboLabel");
+    CreateShortcut(desktopShortcut, exePath, installDir, "YiboLabel label printing tool", exePath);
+    CreateShortcut(Path.Combine(startMenuDir, "YiboLabel.lnk"), exePath, installDir, "YiboLabel label printing tool", exePath);
+    CreateShortcut(Path.Combine(startMenuDir, "Uninstall YiboLabel.lnk"), Path.Combine(installRoot, "Uninstall.cmd"), installRoot, "Uninstall YiboLabel", exePath);
 
     RegisterUninstallEntry(installRoot, installDir, exePath);
 
-    MessageBox.Show(`$"YiboLabel {Version} has been installed.\n\nInstall location: {installDir}\nDesktop, Start menu, and uninstall entries were created.", "YiboLabel installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    MessageBox.Show("YiboLabel " + Version + " has been installed.\n\nInstall location: " + installRoot + "\nDesktop, Start menu, and uninstall entries were created.", "YiboLabel installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
 }
 catch (Exception ex)
 {
     MessageBox.Show(ex.Message, "YiboLabel setup failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
     Environment.ExitCode = 1;
+}
+
+static string? ShowInstallPathDialog(string defaultInstallRoot)
+{
+    using var form = new Form
+    {
+        Text = "YiboLabel Setup",
+        StartPosition = FormStartPosition.CenterScreen,
+        FormBorderStyle = FormBorderStyle.FixedDialog,
+        MaximizeBox = false,
+        MinimizeBox = false,
+        ClientSize = new System.Drawing.Size(520, 236),
+    };
+
+    using var icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+    if (icon is not null)
+    {
+        form.Icon = icon;
+    }
+
+    var title = new Label
+    {
+        AutoSize = true,
+        Font = new System.Drawing.Font(form.Font, System.Drawing.FontStyle.Bold),
+        Text = "Install YiboLabel " + Version,
+        Location = new System.Drawing.Point(18, 18),
+    };
+
+    var summary = new Label
+    {
+        AutoSize = false,
+        Text = "Choose where YiboLabel should be installed. Setup will create Start menu shortcuts and a Windows uninstall entry.",
+        Location = new System.Drawing.Point(18, 48),
+        Size = new System.Drawing.Size(480, 40),
+    };
+
+    var pathLabel = new Label
+    {
+        AutoSize = true,
+        Text = "Install location",
+        Location = new System.Drawing.Point(18, 100),
+    };
+
+    var pathBox = new TextBox
+    {
+        Text = defaultInstallRoot,
+        Location = new System.Drawing.Point(18, 122),
+        Size = new System.Drawing.Size(382, 26),
+        Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right,
+    };
+
+    var browseButton = new Button
+    {
+        Text = "Browse...",
+        Location = new System.Drawing.Point(410, 121),
+        Size = new System.Drawing.Size(88, 28),
+        Anchor = AnchorStyles.Top | AnchorStyles.Right,
+    };
+
+    browseButton.Click += (_, _) =>
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "Choose YiboLabel install location",
+            SelectedPath = Directory.Exists(pathBox.Text) ? pathBox.Text : defaultInstallRoot,
+            UseDescriptionForTitle = true,
+        };
+
+        if (dialog.ShowDialog(form) == DialogResult.OK)
+        {
+            pathBox.Text = dialog.SelectedPath;
+        }
+    };
+
+    var cancelButton = new Button
+    {
+        Text = "Cancel",
+        DialogResult = DialogResult.Cancel,
+        Location = new System.Drawing.Point(316, 184),
+        Size = new System.Drawing.Size(86, 30),
+        Anchor = AnchorStyles.Right | AnchorStyles.Bottom,
+    };
+
+    var installButton = new Button
+    {
+        Text = "Install",
+        DialogResult = DialogResult.OK,
+        Location = new System.Drawing.Point(412, 184),
+        Size = new System.Drawing.Size(86, 30),
+        Anchor = AnchorStyles.Right | AnchorStyles.Bottom,
+    };
+
+    form.Controls.AddRange(new Control[] { title, summary, pathLabel, pathBox, browseButton, cancelButton, installButton });
+    form.AcceptButton = installButton;
+    form.CancelButton = cancelButton;
+
+    return form.ShowDialog() == DialogResult.OK ? pathBox.Text : null;
 }
 
 static void WriteUninstaller(string installRoot, string installDir)
@@ -187,7 +320,7 @@ static string Quote(string value) => `$"\"{value}\"";
 
 static string EscapePowerShellSingleQuotedString(string value) => value.Replace("'", "''");
 
-static void CreateShortcut(string shortcutPath, string targetPath, string workingDirectory, string description)
+static void CreateShortcut(string shortcutPath, string targetPath, string workingDirectory, string description, string iconPath)
 {
     var shellType = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException("WScript.Shell is unavailable.");
     dynamic shell = Activator.CreateInstance(shellType) ?? throw new InvalidOperationException("Failed to create WScript.Shell.");
@@ -195,7 +328,7 @@ static void CreateShortcut(string shortcutPath, string targetPath, string workin
     shortcut.TargetPath = targetPath;
     shortcut.WorkingDirectory = workingDirectory;
     shortcut.Description = description;
-    shortcut.IconLocation = targetPath;
+    shortcut.IconLocation = iconPath + ",0";
     shortcut.Save();
 
     if (shortcut is not null && Marshal.IsComObject(shortcut))

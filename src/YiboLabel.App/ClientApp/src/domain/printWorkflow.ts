@@ -3,7 +3,7 @@ import { boundsIntersect, getElementBounds, getElementOverlapRegion, type Elemen
 import { getDefaultElementName, serializeDocument } from './labelDocument'
 
 export type EditorPanelMode = 'inspector' | 'document-spec' | 'print-calibration'
-export type WorkspaceSurface = 'editor' | 'templates' | 'lexicons' | 'print-check'
+export type WorkspaceSurface = 'editor' | 'print-check'
 export type PrintCalibrationState = 'default' | 'calibrated' | 'unconfirmed' | 'unset'
 export type PrintCheckStatus = 'pass' | 'warn' | 'fail'
 export type PrintCheckCategory = 'device' | 'calibration' | 'document' | 'content' | 'layout' | 'output'

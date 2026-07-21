@@ -1,32 +1,48 @@
-# React + TypeScript + Vite
+# YiboLabel Client App
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+> Status: current frontend workspace note.
+> Scope: this file replaces the original Vite template README and only documents project-local frontend usage.
 
-Currently, two official plugins are available:
+This folder contains the React + TypeScript frontend for the YiboLabel desktop application.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The frontend is built by Vite and hosted by `src/YiboLabel.App` as static files under `wwwroot`.
 
-## React Compiler
+## Common Commands
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Install dependencies:
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+npm install
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Run the local Vite dev server:
+
+```powershell
+npm run dev
+```
+
+Run lint:
+
+```powershell
+npm run lint
+```
+
+Build the production frontend into the ASP.NET Core host:
+
+```powershell
+npm run build
+```
+
+## Project Notes
+
+- `src/App.tsx` owns the main editor state and wires together the workspace shell.
+- `src/components/` contains reusable UI panels and editor surfaces.
+- `src/domain/` contains frontend domain helpers for workspace, label geometry, print workflow, and template data.
+- `src/hooks/` contains stateful frontend workflow helpers split out of the main app.
+- Production output is written to `../wwwroot`; generated files there should be refreshed with `npm run build`.
+
+## Related Docs
+
+- [Root README](E:/Program/YiboLabel/README.md)
+- [Documentation Index](E:/Program/YiboLabel/docs/README.md)
+- [Template and Lexicon Design](E:/Program/YiboLabel/docs/template-lexicon-design.md)

@@ -1,5 +1,8 @@
 # Export Design
 
+> Status: current export behavior reference.
+> Current use: use this file for export format, save dialog, rendering mode, and desktop bridge rules.
+
 ## Goal
 
 Add a consistent export flow for the current label document.

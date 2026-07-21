@@ -1,5 +1,8 @@
 # Printer Validation - 2026-07-04
 
+> Status: current validation record with historical test evidence.
+> Current use: keep for printer queue, direct USB, vendor DLL, and print-agent validation context.
+
 ## Goal
 
 Validate how the current label printer is connected and represented in Windows before building the first print proof of concept.
@@ -107,7 +110,7 @@ At the same time, the vendor software was still able to print normally.
 
 ## Evidence From Vendor Software
 
-The installed Dlabel software includes clear USB-specific printing components:
+The installed vendor software includes clear USB-specific printing components:
 
 - `DPrintCore.dll`
 - `USBApi.dll`
@@ -121,7 +124,7 @@ Its debug log shows vendor-side USB printing behavior rather than ordinary queue
 - `CommandPrintService::loadUSBApiModule|load ok.`
 - `USBDeviceService::StartPrint|Send cmd =====> PRINT 1,2`
 
-The Dlabel local config also stores vendor-specific device information instead of only relying on the Windows queue:
+The vendor local config also stores device information instead of only relying on the Windows queue:
 
 - `printer.ini` uses `printername=HB-Q2`
 - `printmethod=1`
@@ -130,7 +133,7 @@ The Dlabel local config also stores vendor-specific device information instead o
   - `devicePath = \\?\usb#vid_28e9&pid_0285#00000000011a#{a5dcbf10-6530-11d2-901f-00c04fb951ed}`
   - `sdkId = 1`
 
-These signals strongly suggest Dlabel uses a dedicated USB print path for this device family.
+These signals strongly suggest the vendor software uses a dedicated USB print path for this device family.
 
 ## What This Means For YiboLabel
 
@@ -155,13 +158,13 @@ Shift the next technical validation to direct USB printing:
 At this point the investigation split into two viable reverse-engineering directions:
 
 1. `PrintCoreModule` initialization path
-2. reverse trace from `DLabel.exe` into `DPrintCore.dll`, then reconstruct the service initialization order
+2. reverse trace from the vendor executable into `DPrintCore.dll`, then reconstruct the service initialization order
 
 The current active branch is route 1.
 
 ### Current DLL Findings
 
-The Dlabel DLL route is now confirmed to be technically usable.
+The vendor DLL route is now confirmed to be technically usable.
 
 Observed facts:
 
@@ -196,7 +199,7 @@ Calling that slot with a null argument produced:
 - `init result = 1`
 - `after init flag = 1`
 
-This strongly suggests the object can be initialized in-process without launching the full Dlabel application.
+This strongly suggests the object can be initialized in-process without launching the full vendor application.
 
 ### Current Fixed-Command Finding
 
@@ -227,6 +230,6 @@ The active branch remains:
 
 The reserved alternative branch remains:
 
-2. reverse trace from `DLabel.exe` into `DPrintCore.dll`, then reconstruct who initializes which module first and how the service interface is fetched
+2. reverse trace from the vendor executable into `DPrintCore.dll`, then reconstruct who initializes which module first and how the service interface is fetched
 
 The current evidence supports staying on branch 1 for now.

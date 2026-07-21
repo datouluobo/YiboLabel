@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
-    <Version>0.8.71</Version>
-    <AssemblyInformationalVersion>0.8.71</AssemblyInformationalVersion>
+    <Version>0.9.3</Version>
+    <AssemblyInformationalVersion>0.9.3</AssemblyInformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 </Project>

@@ -1,40 +1,48 @@
-# Product
+# 产品
 
-## Register
+> 状态：当前产品与设计定位参考。
+> 范围：只保留高层产品判断；实现细节放在 `README.md` 或 `docs/` 中。
 
-product
+## 用户
 
-## Users
+YiboLabel 的主要用户是项目作者本人，使用场景是本地 Windows 标签打印。
 
-YiboLabel serves a single primary user: the project author running a local Windows label-printing workflow. The user is usually in a task-first context, trying to open a template, adjust a few fields, verify layout against a real label size, and print without delays, login prompts, or cloud dependencies.
+用户通常处在任务优先的状态：打开模板、调整少量字段、确认版面符合真实标签尺寸，然后尽快打印。整个过程不应被登录、网络、会员限制、云同步或复杂功能打断。
 
-## Product Purpose
+## 产品目的
 
-YiboLabel exists to replace bloated vendor label software with a small, local-first printing tool that is fast to open, predictable to use, and easy to maintain. Success means the user can import or recreate common label layouts, edit them visually, save them locally, and print reliably through the existing local print pipeline.
+YiboLabel 用来替代臃肿的厂商标签打印软件，目标是成为一个小而稳定的本地打印工具。
 
-## Brand Personality
+成功标准：
 
-Calm, precise, dependable.
+- 能导入或重建常用标签版式
+- 能可视化编辑标签内容
+- 能本地保存模板
+- 能通过本机打印链路可靠打印
 
-The interface should feel like a practical production tool: quiet, confident, and direct. It should reduce friction and make common printing tasks feel obvious instead of clever.
+## 产品气质
 
-## Anti-references
+冷静、精确、可靠。
 
-- Consumer-style content editors that prioritize decoration over precision.
-- SaaS dashboards with marketing gradients, oversized cards, and vague hierarchy.
-- Vendor printer software that hides core actions behind account, sync, or membership flows.
-- Generic whiteboard tools that feel loose and imprecise when laying out fixed-size labels.
+界面应像一个实用的生产工具：安静、直接、层级清楚。它不需要显得聪明或花哨，只需要让常见打印任务变得顺手。
 
-## Design Principles
+## 反参考
 
-- Keep the user in the print task. Template, canvas, and print settings should stay visible and coherent.
-- Favor precise control over novelty. Measurements, selection state, and object properties must read clearly at a glance.
-- Reduce interaction distance. Common actions like insert, duplicate, reorder, save, and print should take one step.
-- Preserve local ownership. Templates, printers, and output remain local and understandable.
-- Build a narrow expert tool, not a broad platform. Support the label workflow deeply instead of expanding surface area.
+- 重装饰、轻精度的消费级内容编辑器。
+- 使用营销渐变、大卡片和模糊信息层级的 SaaS 仪表盘。
+- 把核心打印动作藏在账号、同步、会员流程之后的厂商软件。
+- 用来做自由白板的通用工具；它们在固定尺寸标签排版上通常不够精确。
 
-## Accessibility & Inclusion
+## 设计原则
 
-- Target a practical WCAG AA baseline for contrast, focus visibility, and keyboard navigation.
-- Motion should be restrained and non-essential, with reduced-motion-safe defaults.
-- Dense UI is acceptable, but labels, states, and control grouping must remain legible under long work sessions.
+- 让用户始终留在打印任务中。模板、画布和打印设置要保持连贯可见。
+- 精确控制优先于新奇效果。尺寸、选中状态、对象属性必须一眼读得清。
+- 缩短操作距离。插入、复制、排序、保存、打印等高频动作应尽量一步完成。
+- 保留本地所有权。模板、打印机和输出结果都应在本机可理解、可控制。
+- 做窄而深的专业工具，不做泛平台。优先把标签打印流程打磨稳定。
+
+## 可访问性
+
+- 对比度、焦点可见性和键盘导航以 WCAG AA 作为实用基线。
+- 动效保持克制，不依赖动效表达关键状态。
+- 界面可以有较高信息密度，但长时间使用时文字、状态和控件分组必须保持清晰。

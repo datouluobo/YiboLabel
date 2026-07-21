@@ -266,7 +266,6 @@ button {
 }
 
 .command-bar,
-.tab-strip,
 .topbar-actions,
 .layer-toolbar,
 .panel-actions,
@@ -309,7 +308,6 @@ button {
   backdrop-filter: blur(10px);
 }
 
-.app-shell.window-maximized .tab-row,
 .app-shell.window-maximized .workspace {
   padding-left: 8px;
   padding-right: 8px;
@@ -487,116 +485,10 @@ button {
   background: var(--warning);
 }
 
-.tab-row {
-  display: block;
-}
-
-.tab-strip {
-  gap: 4px;
-  overflow-x: auto;
-  flex-wrap: nowrap;
-  padding-bottom: 1px;
-}
-
-.tab-strip-empty {
-  color: var(--ink-soft);
-  padding: 10px 12px;
-  border: 1px dashed var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.52);
-  font-size: 13px;
-}
-
-.tab-row-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.editor-tab {
-  display: inline-flex;
-  align-items: stretch;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 4px 10px rgba(18, 32, 52, 0.035);
-}
-
-.editor-tab.active {
-  border-color: rgba(23, 105, 255, 0.42);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: inset 0 0 0 1px rgba(23, 105, 255, 0.1);
-}
-
-.editor-tab.dirty:not(.active) {
-  border-color: rgba(184, 106, 18, 0.3);
-}
-
-.editor-tab-trigger,
-.editor-tab-close {
-  border: 0;
-  background: transparent;
-  color: inherit;
-}
-
-.editor-tab-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 7px 10px;
-  cursor: pointer;
-}
-
-.editor-tab-trigger strong {
-  min-width: 0;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  line-height: 1.2;
-}
-
 .compact-button {
   min-height: 32px;
   padding-inline: 10px;
   box-shadow: none;
-}
-
-.tab-dirty {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--warning);
-}
-
-.editor-tab-close {
-  width: 26px;
-  border-left: 1px solid var(--line);
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.new-tab-button {
-  display: inline-grid;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.86);
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-
-.new-tab-button:hover {
-  border-color: var(--line-strong);
-  color: var(--accent-strong);
-  background: var(--accent-wash);
 }
 
 .ghost-button.active {
@@ -606,15 +498,8 @@ button {
   box-shadow: inset 0 0 0 1px rgba(23, 105, 255, 0.12);
 }
 
-.editor-tab-close:hover,
-.editor-tab-trigger:hover {
-  background: rgba(23, 105, 255, 0.06);
-}
-
 .canvas-metrics span,
 .layer-main span,
-.template-card span,
-.template-card small,
 .activity-list p,
 .empty-note,
 .panel-note {
@@ -630,7 +515,6 @@ button {
 .print-button,
 .tool-button,
 .mini-button,
-.template-card,
 .layer-main {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -660,7 +544,6 @@ button {
 .action-button:hover,
 .print-button:hover,
 .tool-button:hover,
-.template-card:hover,
 .layer-main:hover,
 .mini-button:hover {
   border-color: var(--line-strong);
@@ -699,10 +582,6 @@ button {
   gap: 8px;
   align-items: stretch;
   min-height: 0;
-}
-
-.workspace.library-mode {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .workspace.template-preview-mode {
@@ -819,58 +698,6 @@ button {
   align-content: start;
 }
 
-.template-card {
-  display: grid;
-  gap: 4px;
-  text-align: left;
-  padding: 9px 10px;
-}
-
-.template-card-large {
-  gap: 8px;
-  min-height: 116px;
-  padding: 14px;
-  align-content: space-between;
-}
-
-.template-card-head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.template-flags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.template-flag {
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.template-flag.current {
-  color: var(--accent-strong);
-  background: rgba(23, 105, 255, 0.12);
-}
-
-.template-flag.open {
-  color: var(--ink-soft);
-  background: rgba(75, 90, 108, 0.1);
-}
-
-.template-flag.dirty {
-  color: var(--warning);
-  background: rgba(184, 106, 18, 0.12);
-}
-
-.template-card.active,
 .tool-button.active,
 .layer-row.selected {
   border-color: rgba(23, 105, 255, 0.42);
@@ -1843,124 +1670,6 @@ textarea {
   padding: 0 0 12px;
 }
 
-.templates-workspace {
-  padding: 12px 12px 14px;
-}
-
-.lexicon-workspace {
-  padding: 12px;
-}
-
-.template-browser-head {
-  align-items: start;
-}
-
-.template-browser-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 10px;
-  min-height: 0;
-  overflow: auto;
-  padding: 6px 2px 2px 0;
-}
-
-.lexicon-metrics {
-  min-width: 280px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.lexicon-manager-grid {
-  display: grid;
-  grid-template-columns: 280px minmax(420px, 1fr);
-  gap: 10px;
-  min-height: 0;
-  flex: 1;
-}
-
-.lexicon-column {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-muted);
-}
-
-.lexicon-column-head,
-.lexicon-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.lexicon-column-head strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-}
-
-.lexicon-list,
-.lexicon-entry-list {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  min-height: 0;
-  overflow: auto;
-  padding-right: 2px;
-}
-
-.lexicon-list-item {
-  display: grid;
-  gap: 3px;
-  width: 100%;
-  padding: 8px 9px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: white;
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-}
-
-.lexicon-list-item:hover,
-.lexicon-list-item.active {
-  border-color: rgba(23, 105, 255, 0.42);
-  background: var(--accent-wash);
-}
-
-.lexicon-list-item strong,
-.lexicon-list-item span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lexicon-list-item span {
-  color: var(--ink-soft);
-  font-size: 12px;
-}
-
-.lexicon-search {
-  margin-bottom: 0 !important;
-}
-
-.lexicon-entry-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.lexicon-entry-row input {
-  min-width: 0;
-}
-
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -2022,6 +1731,124 @@ textarea {
 
 .pending-saves-dialog {
   width: min(560px, calc(100vw - 48px));
+}
+
+.about-dialog {
+  width: min(480px, calc(100vw - 48px));
+}
+
+.about-dialog-heading {
+  align-items: center;
+}
+
+.about-dialog-title {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.about-dialog-mark {
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+}
+
+.about-dialog-title h2 {
+  font-size: 21px;
+  letter-spacing: -0.015em;
+}
+
+.about-dialog-title p {
+  margin-top: 5px;
+}
+
+.about-dialog-close {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+}
+
+.about-dialog-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.about-dialog-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.about-dialog-summary {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.about-highlight-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 2px;
+}
+
+.about-highlight {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--surface-muted) 76%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--line) 58%, white);
+}
+
+.about-highlight-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+}
+
+.about-highlight strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.about-highlight p {
+  margin: 3px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.about-dialog-actions {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.about-github-link {
+  min-height: 34px;
+  padding-inline: 12px;
+  text-decoration: none;
+  box-shadow: none;
 }
 
 .pending-saves-list {
@@ -2353,32 +2180,28 @@ textarea {
 }
 
 .workspace-badge,
-.document-state-badge,
-.template-flag {
+.document-state-badge {
   border: 1px solid transparent;
   border-radius: 999px;
   font-weight: 750;
 }
 
 .workspace-badge.template,
-.document-state-badge.template,
-.template-flag.current {
+.document-state-badge.template {
   border-color: oklch(0.74 0.06 205);
   background: oklch(0.92 0.04 205);
   color: var(--accent-strong);
 }
 
 .workspace-badge.draft,
-.document-state-badge.draft,
-.template-flag.open {
+.document-state-badge.draft {
   border-color: oklch(0.8 0.018 226);
   background: oklch(0.94 0.01 226);
   color: var(--ink-soft);
 }
 
 .workspace-badge.dirty,
-.document-state-badge.dirty,
-.template-flag.dirty {
+.document-state-badge.dirty {
   border-color: oklch(0.76 0.08 72);
   background: oklch(0.91 0.055 72);
   color: oklch(0.42 0.09 72);
@@ -2583,11 +2406,8 @@ textarea {
 .special-tool-button,
 .tool-button,
 .mini-button,
-.template-card,
 .layer-main,
-.new-tab-button,
-.export-option,
-.lexicon-list-item {
+.export-option {
   border-color: var(--line);
   border-radius: var(--radius-md);
   box-shadow: none;
@@ -2610,8 +2430,7 @@ textarea {
 .ghost-button,
 .action-button,
 .special-tool-button,
-.mini-button,
-.new-tab-button {
+.mini-button {
   background: oklch(0.98 0.004 226);
 }
 
@@ -2662,12 +2481,9 @@ textarea {
 .print-button:hover,
 .special-tool-button:hover,
 .tool-button:hover,
-.template-card:hover,
 .layer-row:hover,
 .mini-button:hover,
-.new-tab-button:hover,
-.export-option:hover,
-.lexicon-list-item:hover {
+.export-option:hover {
   border-color: var(--line-strong);
   transform: translateY(-1px);
 }
@@ -2678,9 +2494,6 @@ textarea {
 .special-tool-button:focus-visible,
 .tool-button:focus-visible,
 .mini-button:focus-visible,
-.new-tab-button:focus-visible,
-.editor-tab-trigger:focus-visible,
-.editor-tab-close:focus-visible,
 .layer-icon-button:focus-visible,
 .inline-icon-button:focus-visible,
 input:focus-visible,
@@ -2840,56 +2653,16 @@ select:focus-visible {
   box-shadow: 0 0 0 3px oklch(0.84 0.09 72 / 0.35);
 }
 
-.tab-strip {
-  gap: 3px;
-  padding: 0 1px 1px;
-}
-
-.editor-tab {
-  border-radius: var(--radius-md);
-  background: oklch(0.97 0.006 226);
-  box-shadow: none;
-  overflow: hidden;
-}
-
-.editor-tab.active {
-  border-color: oklch(0.66 0.08 205);
-  background: var(--surface-strong);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-
-.editor-tab-trigger {
-  padding: 7px 11px;
-}
-
-.editor-tab-close {
-  border-left-color: var(--line);
-}
-
 .workspace {
   grid-template-columns: minmax(220px, 270px) minmax(0, 1fr) 320px;
   gap: 7px;
   padding: 7px 8px 8px;
 }
 
-.app-shell.window-maximized .tab-row,
 .app-shell.window-maximized .workspace {
   padding-left: 8px;
   padding-right: 8px;
   padding-bottom: 8px;
-}
-
-.app-shell.window-maximized .workspace.library-mode,
-.workspace.library-mode {
-  padding: 0;
-}
-
-.workspace.library-mode > .canvas-panel {
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
-  border-radius: 0;
-  box-shadow: none;
 }
 
 .sidebar {
@@ -2901,7 +2674,6 @@ select:focus-visible {
 
 .panel,
 .canvas-panel,
-.lexicon-column,
 .modal-panel {
   border-color: var(--line);
   background: var(--surface);
@@ -3361,8 +3133,7 @@ input[type='checkbox']:focus-visible {
 
 .inspector-section,
 .summary-chip,
-.printer-status,
-.lexicon-column {
+.printer-status {
   border-color: var(--line);
   border-radius: var(--radius-md);
   background: oklch(0.965 0.007 226);
@@ -3392,32 +3163,15 @@ input[type='checkbox']:focus-visible {
 
 .inspector-section-head strong,
 .inspector-subhead,
-.lexicon-column-head strong,
-.template-card strong,
 .export-option strong {
   color: oklch(0.27 0.035 232);
 }
 
-.template-browser-grid {
-  gap: 9px;
-}
-
-.template-card {
-  background:
-    linear-gradient(180deg, oklch(1 0 0), oklch(0.955 0.007 226));
-}
-
-.template-card-large {
-  min-height: 108px;
-}
-
-.template-card.active,
 .tool-button.active,
 .layer-row.selected,
 .mini-button.active,
 .ghost-button.active,
-.export-option.active,
-.lexicon-list-item.active {
+.export-option.active {
   border-color: oklch(0.65 0.08 205);
   background: oklch(0.92 0.04 205);
   box-shadow: none;
@@ -3489,11 +3243,6 @@ input[type='checkbox']:focus-visible {
   padding: var(--space-frame);
 }
 
-.app-shell.window-maximized .workspace.library-mode,
-.workspace.library-mode {
-  padding: 0;
-}
-
 .sidebar,
 .inspector {
   gap: var(--space-frame);
@@ -3514,7 +3263,6 @@ input[type='checkbox']:focus-visible {
 .inspector-section,
 .summary-chip,
 .printer-status,
-.lexicon-column,
 .modal-panel {
   border-radius: var(--radius-panel);
 }
@@ -3639,11 +3387,8 @@ input[type='checkbox']:focus-visible {
   .print-button,
   .tool-button,
   .mini-button,
-  .template-card,
   .layer-main,
-  .new-tab-button,
   .export-option,
-  .lexicon-list-item,
   input,
   textarea,
   select {
@@ -3683,7 +3428,6 @@ input[type='checkbox']:focus-visible {
   }
 
   .topbar,
-  .tab-row,
   .sidebar,
   .inspector,
   .canvas-toolbar,
@@ -3777,17 +3521,10 @@ input[type='checkbox']:focus-visible {
     grid-template-columns: 250px minmax(500px, 1fr) 300px;
   }
 
-  .workspace.library-mode {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .workspace-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .lexicon-manager-grid {
-    grid-template-columns: 260px minmax(360px, 1fr);
-  }
 }
 
 @media (max-width: 1180px) {
@@ -3810,10 +3547,6 @@ input[type='checkbox']:focus-visible {
   }
 
   .workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .tab-row {
     grid-template-columns: 1fr;
   }
 
@@ -3840,13 +3573,6 @@ input[type='checkbox']:focus-visible {
     white-space: normal;
   }
 
-  .lexicon-manager-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .lexicon-column {
-    min-height: 220px;
-  }
 }
 
 @media (max-width: 720px) {
@@ -3888,14 +3614,9 @@ input[type='checkbox']:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .empty-workspace-actions,
-  .template-card-head {
+  .empty-workspace-actions {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .template-flags {
-    justify-content: flex-start;
   }
 
   .topbar h1,
@@ -3903,9 +3624,6 @@ input[type='checkbox']:focus-visible {
     font-size: 18px;
   }
 
-  .lexicon-entry-row {
-    grid-template-columns: 1fr;
-  }
 }
 .topbar-copies {
   display: inline-flex;

@@ -4,7 +4,7 @@ using System.Text;
 
 namespace YiboLabel.PrintCore;
 
-public sealed class DlabelPrinterChannel : IDisposable
+public sealed class VendorDllPrinterChannel : IDisposable
 {
     private const int UsbServiceOffset = 0x2C;
     private readonly IntPtr moduleHandle;
@@ -12,38 +12,38 @@ public sealed class DlabelPrinterChannel : IDisposable
     private readonly IntPtr usbService;
     private bool disposed;
 
-    private DlabelPrinterChannel(string dlabelDirectory, IntPtr moduleHandle, IntPtr commandService, IntPtr usbService, string devicePath)
+    private VendorDllPrinterChannel(string vendorDllDirectory, IntPtr moduleHandle, IntPtr commandService, IntPtr usbService, string devicePath)
     {
-        DlabelDirectory = dlabelDirectory;
+        VendorDllDirectory = vendorDllDirectory;
         DevicePath = devicePath;
         this.moduleHandle = moduleHandle;
         this.commandService = commandService;
         this.usbService = usbService;
     }
 
-    public string DlabelDirectory { get; }
+    public string VendorDllDirectory { get; }
 
     public string DevicePath { get; }
 
-    public static DlabelPrinterChannel Open(string devicePath, string? dlabelDirectory = null)
+    public static VendorDllPrinterChannel Open(string devicePath, string? vendorDllDirectory = null)
     {
         if (string.IsNullOrWhiteSpace(devicePath))
         {
             throw new ArgumentException("Device path is required.", nameof(devicePath));
         }
 
-        var resolvedDlabelDirectory = string.IsNullOrWhiteSpace(dlabelDirectory) ? DlabelDefaults.InstallDirectory : dlabelDirectory;
-        if (!Directory.Exists(resolvedDlabelDirectory))
+        var resolvedVendorDllDirectory = string.IsNullOrWhiteSpace(vendorDllDirectory) ? VendorDllDefaults.InstallDirectory : vendorDllDirectory;
+        if (!Directory.Exists(resolvedVendorDllDirectory))
         {
-            throw new DirectoryNotFoundException($"Dlabel directory was not found: {resolvedDlabelDirectory}");
+            throw new DirectoryNotFoundException($"Vendor DLL directory was not found: {resolvedVendorDllDirectory}");
         }
 
-        if (!NativeMethods.SetDllDirectory(resolvedDlabelDirectory))
+        if (!NativeMethods.SetDllDirectory(resolvedVendorDllDirectory))
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"Failed to set DLL directory: {resolvedDlabelDirectory}");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), $"Failed to set DLL directory: {resolvedVendorDllDirectory}");
         }
 
-        var dllPath = Path.Combine(resolvedDlabelDirectory, "DPrintCore.dll");
+        var dllPath = Path.Combine(resolvedVendorDllDirectory, "DPrintCore.dll");
         var moduleHandle = NativeMethods.LoadLibrary(dllPath);
         if (moduleHandle == IntPtr.Zero)
         {
@@ -89,7 +89,7 @@ public sealed class DlabelPrinterChannel : IDisposable
                 throw new InvalidOperationException($"Opening USB device failed. result={openResult}");
             }
 
-            return new DlabelPrinterChannel(resolvedDlabelDirectory, moduleHandle, commandService, usbService, devicePath);
+            return new VendorDllPrinterChannel(resolvedVendorDllDirectory, moduleHandle, commandService, usbService, devicePath);
         }
         catch
         {

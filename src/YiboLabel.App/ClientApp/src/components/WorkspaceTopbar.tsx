@@ -1,4 +1,4 @@
-import { Archive, Check, ChevronDown, Download, FilePlus2, FolderOpen, Printer, RefreshCw, RotateCcw, Save, SearchCheck, Upload } from 'lucide-react'
+import { Archive, Check, ChevronDown, Download, FilePlus2, FolderOpen, Info, Printer, RefreshCw, RotateCcw, Save, SearchCheck, Upload } from 'lucide-react'
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -29,6 +29,7 @@ type WorkspaceTopbarProps = {
   printing: boolean
   exporting: boolean
   dataManaging: boolean
+  aboutOpen: boolean
   onShowEditor: (tabId: string) => void
   onCloseTab: (tabId: string) => void
   onCreateFreshDocument: () => void
@@ -47,6 +48,7 @@ type WorkspaceTopbarProps = {
   onBackupAllData: () => void
   onRestoreDataBackup: () => void
   onOpenDataDirectory: () => void
+  onOpenAbout: () => void
   onOpenPrintCheck: () => void
   onPrintCurrent: () => void
   onRequestAppClose: () => void
@@ -73,6 +75,7 @@ export function WorkspaceTopbar({
   printing,
   exporting,
   dataManaging,
+  aboutOpen,
   onShowEditor,
   onCloseTab,
   onCreateFreshDocument,
@@ -91,6 +94,7 @@ export function WorkspaceTopbar({
   onBackupAllData,
   onRestoreDataBackup,
   onOpenDataDirectory,
+  onOpenAbout,
   onOpenPrintCheck,
   onPrintCurrent,
   onRequestAppClose,
@@ -413,6 +417,14 @@ export function WorkspaceTopbar({
           <button className="ghost-button compact-button topbar-action-secondary low-priority-button" onClick={onReopenLastClosedTab} disabled={recentClosedTabsCount === 0} title="恢复关闭标签">
             <RotateCcw size={14} />
             <span className="button-label">恢复</span>
+          </button>
+          <button
+            className={clsx('ghost-button compact-button topbar-action-secondary low-priority-button about-trigger', aboutOpen && 'active')}
+            onClick={onOpenAbout}
+            title="关于 YiboLabel"
+            aria-label="关于 YiboLabel"
+          >
+            <Info size={15} />
           </button>
         </div>
         <div className="toolbar-spacer" aria-hidden="true" />

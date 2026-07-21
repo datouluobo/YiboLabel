@@ -195,11 +195,11 @@ static void ProbeUsbAccess()
 static IEnumerable<string> GetUsbCandidatePaths()
 {
     const string printerDriverDataKey = @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Print\Printers\HB-Q2(USB)\PrinterDriverData";
-    const string dlabelPropertyJson = @"C:\Users\Administrator\AppData\Local\Dlabel\PrinterDefaultProperty.json";
+    const string vendorPrinterPropertyJson = @"C:\Users\Administrator\AppData\Local\Dlabel\PrinterDefaultProperty.json";
 
-    if (File.Exists(dlabelPropertyJson))
+    if (File.Exists(vendorPrinterPropertyJson))
     {
-        using var stream = File.OpenRead(dlabelPropertyJson);
+        using var stream = File.OpenRead(vendorPrinterPropertyJson);
         using var document = System.Text.Json.JsonDocument.Parse(stream);
         foreach (var element in document.RootElement.EnumerateArray())
         {

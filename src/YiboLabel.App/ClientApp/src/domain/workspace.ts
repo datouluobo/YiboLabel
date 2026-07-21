@@ -21,6 +21,8 @@ export type EditorTab = {
 }
 
 export type EditorTabOrigin = 'blank' | 'imported' | 'template' | 'detached'
+type WorkspaceSurface = 'editor' | 'print-check'
+type LegacyWorkspaceSurface = WorkspaceSurface | 'templates' | 'lexicons' | 'about'
 
 export type ClosedTabSnapshot = {
   templateId: string | null
@@ -34,7 +36,7 @@ export type WorkspaceSnapshot = {
   version: 11
   activeTabId: string | null
   ui?: {
-    activeSurface: 'editor' | 'templates' | 'lexicons' | 'print-check'
+    activeSurface: WorkspaceSurface
     lastEditorTabId: string | null
     activeEditorPanel: 'inspector' | 'document-spec' | 'print-calibration'
     sidebarTab?: SidebarTab
@@ -112,8 +114,8 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
 
     const parsed = JSON.parse(raw) as
       | WorkspaceSnapshot
-      | (Omit<WorkspaceSnapshot, 'version'> & { version: 10 })
-      | (Omit<WorkspaceSnapshot, 'version'> & { version: 9; ui?: { activeSurface: 'editor' | 'templates' | 'lexicons'; lastEditorTabId: string | null; showDocumentDialog: boolean } })
+      | (Omit<WorkspaceSnapshot, 'version'> & { version: 10; ui?: Omit<NonNullable<WorkspaceSnapshot['ui']>, 'activeSurface'> & { activeSurface?: LegacyWorkspaceSurface } })
+      | (Omit<WorkspaceSnapshot, 'version'> & { version: 9; ui?: { activeSurface: LegacyWorkspaceSurface; lastEditorTabId: string | null; showDocumentDialog: boolean } })
       | (Omit<WorkspaceSnapshot, 'version'> & { version: 8 })
       | (Omit<WorkspaceSnapshot, 'version'> & { version: 7 })
     if (!parsed || !Array.isArray(parsed.tabs)) {
@@ -123,6 +125,12 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
     if (parsed.version === 11) {
       return {
         ...parsed,
+        ui: parsed.ui
+          ? {
+              ...parsed.ui,
+              activeSurface: normalizeWorkspaceSurface(parsed.ui.activeSurface),
+            }
+          : undefined,
         tabs: parsed.tabs.map((tab) => ({
           ...tab,
           origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
@@ -131,6 +139,7 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
     }
 
     if (parsed.version === 10) {
+      const legacyUi = parsed.ui as { activeSurface?: LegacyWorkspaceSurface; lastEditorTabId?: string | null; activeEditorPanel?: 'inspector' | 'document-spec' | 'print-calibration' } | undefined
       return {
         version: 11,
         activeTabId: parsed.activeTabId ?? null,
@@ -139,16 +148,17 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
           origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
         })),
         ui: {
-          activeSurface: parsed.ui?.activeSurface ?? 'editor',
-          lastEditorTabId: parsed.ui?.lastEditorTabId ?? parsed.activeTabId ?? null,
-          activeEditorPanel: parsed.ui?.activeEditorPanel ?? 'inspector',
-          sidebarTab: parsed.ui?.activeSurface === 'templates' ? 'templates' : 'elements',
+          activeSurface: normalizeWorkspaceSurface(legacyUi?.activeSurface),
+          lastEditorTabId: legacyUi?.lastEditorTabId ?? parsed.activeTabId ?? null,
+          activeEditorPanel: legacyUi?.activeEditorPanel ?? 'inspector',
+          sidebarTab: legacyUi?.activeSurface === 'templates' ? 'templates' : 'elements',
           previewTemplateId: null,
         },
       }
     }
 
     if (parsed.version === 9) {
+      const legacyUi = parsed.ui as { activeSurface?: LegacyWorkspaceSurface; lastEditorTabId?: string | null; showDocumentDialog?: boolean } | undefined
       return {
         version: 11,
         activeTabId: parsed.activeTabId ?? null,
@@ -157,17 +167,17 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
           origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
         })),
         ui: {
-          activeSurface: parsed.ui?.activeSurface ?? 'editor',
-          lastEditorTabId: parsed.ui?.lastEditorTabId ?? parsed.activeTabId ?? null,
-          activeEditorPanel: parsed.ui?.showDocumentDialog ? 'document-spec' : 'inspector',
-          sidebarTab: parsed.ui?.activeSurface === 'templates' ? 'templates' : 'elements',
+          activeSurface: normalizeWorkspaceSurface(legacyUi?.activeSurface),
+          lastEditorTabId: legacyUi?.lastEditorTabId ?? parsed.activeTabId ?? null,
+          activeEditorPanel: legacyUi?.showDocumentDialog ? 'document-spec' : 'inspector',
+          sidebarTab: legacyUi?.activeSurface === 'templates' ? 'templates' : 'elements',
           previewTemplateId: null,
         },
       }
     }
 
     if (parsed.version === 8) {
-      const legacyUi = parsed.ui as { activeSurface?: 'editor' | 'templates' | 'lexicons'; lastEditorTabId?: string | null; showDocumentDialog?: boolean } | undefined
+      const legacyUi = parsed.ui as { activeSurface?: LegacyWorkspaceSurface; lastEditorTabId?: string | null; showDocumentDialog?: boolean } | undefined
       return {
         version: 11,
         activeTabId: parsed.activeTabId ?? null,
@@ -176,7 +186,7 @@ export function readWorkspaceSnapshot(): WorkspaceSnapshot | null {
           origin: tab.origin ?? inferTabOrigin(tab.templateId ?? null),
         })),
         ui: {
-          activeSurface: legacyUi?.activeSurface ?? 'editor',
+          activeSurface: normalizeWorkspaceSurface(legacyUi?.activeSurface),
           lastEditorTabId: legacyUi?.lastEditorTabId ?? parsed.activeTabId ?? null,
           activeEditorPanel: legacyUi?.showDocumentDialog ? 'document-spec' : 'inspector',
           sidebarTab: legacyUi?.activeSurface === 'templates' ? 'templates' : 'elements',
@@ -242,4 +252,12 @@ export function isTabDirty(
 
 function inferTabOrigin(templateId: string | null): EditorTabOrigin {
   return templateId ? 'template' : 'blank'
+}
+
+function normalizeWorkspaceSurface(surface: LegacyWorkspaceSurface | undefined): WorkspaceSurface {
+  if (surface === 'print-check') {
+    return surface
+  }
+
+  return 'editor'
 }

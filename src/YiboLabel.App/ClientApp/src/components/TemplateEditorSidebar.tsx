@@ -439,11 +439,20 @@ export function TemplateEditorSidebar({
   const selectedGroupBound = lexiconSelection?.kind === 'group'
     ? selectedElementGroupIds.has(lexiconSelection.groupId)
     : false
-  const primaryLexiconAction = singleBindableElement && lexiconSelection
-    ? lexiconSelection.kind === 'entry'
-      ? { label: '应用条目' as const, kind: 'apply-entry' as const }
-      : { label: selectedGroupBound ? '取消绑定' as const : '绑定分组' as const, kind: selectedGroupBound ? 'unbind-group' as const : 'bind-group' as const }
-    : null
+  const primaryLexiconAction = useMemo(() => {
+    if (!singleBindableElement || !lexiconSelection) {
+      return null
+    }
+
+    if (lexiconSelection.kind === 'entry') {
+      return { label: '应用条目' as const, kind: 'apply-entry' as const }
+    }
+
+    return {
+      label: selectedGroupBound ? '取消绑定' as const : '绑定分组' as const,
+      kind: selectedGroupBound ? 'unbind-group' as const : 'bind-group' as const,
+    }
+  }, [lexiconSelection, selectedGroupBound, singleBindableElement])
 
   const selectedLexiconActionLabel = primaryLexiconAction?.label ?? primaryActionLabel
   const canExecuteSelectedLexiconAction = primaryLexiconAction !== null
@@ -577,7 +586,7 @@ export function TemplateEditorSidebar({
       : []
 
     setExpandedGroupIds((current) => [...new Set([...current, ...autoExpandedIds])])
-  }, [entryQuery, filteredLexiconGroups])
+  }, [activeLexiconGroups.length, currentGroup, entryQuery, filteredLexiconGroups])
 
   useEffect(() => {
     if (!lexiconSelection) {

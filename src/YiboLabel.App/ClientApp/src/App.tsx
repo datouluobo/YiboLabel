@@ -14,16 +14,8 @@ import './App.css'
 import './styles/floating-panels.css'
 import { fetchAppState, fetchPrinters } from './api/appStateApi'
 import {
-  createLexiconEntry as createLexiconEntryRequest,
-  createLexiconGroup as createLexiconGroupRequest,
-  deleteLexiconEntry as deleteLexiconEntryRequest,
-  deleteLexiconGroup as deleteLexiconGroupRequest,
   fetchLexiconGroups,
   fetchLexiconLibrary,
-  moveLexiconEntry as moveLexiconEntryRequest,
-  moveLexiconGroup as moveLexiconGroupRequest,
-  renameLexiconGroup as renameLexiconGroupRequest,
-  updateLexiconEntry as updateLexiconEntryRequest,
 } from './api/lexiconsApi'
 import { printDocument } from './api/printApi'
 import { createFullDataBackup, openDataDirectory, restoreDataBackup } from './api/dataManagementApi'
@@ -41,9 +33,9 @@ import { getErrorMessage } from './api/http'
 import { EditorCanvasPanel } from './components/EditorCanvasPanel'
 import { ElementInspector, MultiSelectionInspector } from './components/ElementInspector'
 import { ExportDialog, type ExportDialogOptions } from './components/ExportDialog'
-import { LexiconManager } from './components/LexiconManager'
 import { PendingSavesDialog } from './components/PendingSavesDialog'
 import { DocumentSpecPanel, PrintCalibrationPanel, PrintCheckSurface } from './components/PrintWorkflowPanels'
+import { AboutDialog } from './components/AboutSurface'
 import { TemplateEditorSidebar } from './components/TemplateEditorSidebar'
 import { TemplatePreviewPanel } from './components/TemplatePreviewPanel'
 import { UnsavedChangesDialog } from './components/UnsavedChangesDialog'
@@ -72,7 +64,7 @@ import {
   type Point,
   type SnapLine,
 } from './domain/editorGeometry'
-import { importDlabelTemplate } from './domain/dlabelImport'
+import { importLegacyTemplate } from './domain/legacyTemplateImport'
 import {
   clamp,
   createBlankDocument,
@@ -114,6 +106,7 @@ import {
   type WorkspaceSnapshot,
 } from './domain/workspace'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useLexiconSidebarActions } from './hooks/useLexiconSidebarActions'
 import {
   chooseExportPath,
   writeBase64ExportFile,
@@ -137,8 +130,6 @@ import type {
   LabelDocument,
   LabelElement,
   LabelTemplateRecord,
-  LexiconEntry,
-  LexiconGroup,
   LexiconLibrary,
   LabelTemplateSummary,
   LexiconGroupSummary,
@@ -147,6 +138,8 @@ import type {
 } from './types'
 
 const baseCanvasScale = 16
+const githubUrl = 'https://github.com/datouluobo/YiboLabel'
+const fallbackAppVersion = import.meta.env.VITE_APP_VERSION ?? null
 const emptySelectionIds: string[] = []
 const emptyHistoryState: EditorTab['history'] = { past: [], future: [] }
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -207,8 +200,6 @@ export default function App() {
   const [lexiconGroups, setLexiconGroups] = useState<LexiconGroupSummary[]>([])
   const [lexiconLibrary, setLexiconLibrary] = useState<LexiconLibrary>({ schemaVersion: 1, lexicons: [] })
   const [activeLexiconId, setActiveLexiconId] = useState<string | null>(null)
-  const [activeLexiconGroupId, setActiveLexiconGroupId] = useState<string | null>(null)
-  const [lexiconQuery, setLexiconQuery] = useState('')
   const [bindingOverlayEnabled, setBindingOverlayEnabled] = useState(false)
   const [bindingOverlayScope, setBindingOverlayScope] = useState<'selected' | 'all'>('selected')
   const [activeSidebarGroupId, setActiveSidebarGroupId] = useState<string | null>(null)
@@ -230,6 +221,7 @@ export default function App() {
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [dataManaging, setDataManaging] = useState(false)
+  const [showAboutDialog, setShowAboutDialog] = useState(false)
   const [exportOptions, setExportOptions] = useState<ExportDialogOptions>({ format: 'pdf', pdfPaperMode: 'label' })
   const [unsavedDialog, setUnsavedDialog] = useState<UnsavedDialogState | null>(null)
   const [pendingSavesOpen, setPendingSavesOpen] = useState(false)
@@ -403,23 +395,6 @@ export default function App() {
           template.name.toLowerCase().includes(query),
         )
   }, [templateQuery, templates])
-  const activeLexicon = useMemo(
-    () => lexiconLibrary.lexicons.find((lexicon) => lexicon.id === activeLexiconId) ?? lexiconLibrary.lexicons[0] ?? null,
-    [activeLexiconId, lexiconLibrary.lexicons],
-  )
-  const activeLexiconGroup = useMemo(
-    () => activeLexicon?.groups.find((group) => group.id === activeLexiconGroupId) ?? activeLexicon?.groups[0] ?? null,
-    [activeLexicon, activeLexiconGroupId],
-  )
-  const filteredLexiconEntries = useMemo(() => {
-    const entries = activeLexiconGroup?.entries ?? []
-    const query = lexiconQuery.trim().toLowerCase()
-    if (!query) {
-      return entries
-    }
-
-    return entries.filter((entry) => entry.text.toLowerCase().includes(query))
-  }, [activeLexiconGroup?.entries, lexiconQuery])
   const selectedVisibleElements = selectedElements.filter((element) => !element.hidden)
   const selectionBounds = useMemo(() => getSelectionBounds(selectedVisibleElements), [selectedVisibleElements])
   const marqueeBounds = interaction?.mode === 'marquee' ? getMarqueeBounds(interaction.start, interaction.current) : null
@@ -618,7 +593,7 @@ export default function App() {
     }
   }, [activeTabId, lastEditorTabId])
 
-  const handleSidebarTabChange = useCallback((nextTab: SidebarTab) => {
+  function handleSidebarTabChange(nextTab: SidebarTab) {
     if (nextTab === 'templates') {
       if (activeTab?.origin === 'template' && activeTab.templateId && templateExists(activeTab.templateId)) {
         setPreviewTemplateId(activeTab.templateId)
@@ -646,14 +621,7 @@ export default function App() {
 
     setSidebarTab(nextTab)
     setActiveSurface('editor')
-  }, [
-    activeTab,
-    loadTemplate,
-    previewTemplateId,
-    restoreLastEditorTabOrBlank,
-    sidebarTab,
-    templateExists,
-  ])
+  }
 
   function showEditor(tabId?: string | null) {
     const targetId = tabId ?? lastEditorTabId ?? activeTabId ?? tabsRef.current[0]?.id ?? null
@@ -765,210 +733,6 @@ export default function App() {
     }
 
     void bindLexiconGroupToElement(elementId, groupId, { source: 'popover' })
-  }
-
-  function findLexiconGroupById(groupId: string) {
-    for (const lexicon of lexiconLibrary.lexicons) {
-      const group = lexicon.groups.find((item) => item.id === groupId)
-      if (group) {
-        return { lexicon, group }
-      }
-    }
-    return null
-  }
-
-  function findLexiconEntryById(groupId: string, entryId: string) {
-    const resolved = findLexiconGroupById(groupId)
-    if (!resolved) {
-      return null
-    }
-
-    const entry = resolved.group.entries.find((item) => item.id === entryId) ?? null
-    return entry ? { ...resolved, entry } : null
-  }
-
-  async function createSidebarLexiconGroup() {
-    const targetLexicon = lexiconLibrary.lexicons.find((lexicon) => lexicon.id === activeLexiconId) ?? lexiconLibrary.lexicons[0] ?? null
-    if (!targetLexicon) {
-      setStatus('词库尚未初始化。')
-      return
-    }
-
-    const name = window.prompt('分组名称', '新分组')?.trim()
-    if (!name) {
-      return
-    }
-
-    try {
-      const created = await createLexiconGroupRequest(targetLexicon.id, name)
-      await refreshLexiconGroups()
-      setActiveLexiconId(targetLexicon.id)
-      setActiveLexiconGroupId(created.id)
-      setActiveSidebarGroupId(created.id)
-      setStatus(`已创建分组：${created.name}`)
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function renameSidebarLexiconGroup(groupId: string) {
-    const resolved = findLexiconGroupById(groupId)
-    if (!resolved) {
-      setStatus('未找到要重命名的分组。')
-      return
-    }
-
-    const name = window.prompt('分组名称', resolved.group.name)?.trim()
-    if (!name || name === resolved.group.name) {
-      return
-    }
-
-    try {
-      const saved = await renameLexiconGroupRequest(resolved.lexicon.id, resolved.group.id, name)
-      await refreshLexiconGroups()
-      setActiveLexiconId(resolved.lexicon.id)
-      setActiveLexiconGroupId(saved.id)
-      setActiveSidebarGroupId(saved.id)
-      setStatus(`已重命名分组：${saved.name}`)
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function deleteSidebarLexiconGroup(groupId: string) {
-    const resolved = findLexiconGroupById(groupId)
-    if (!resolved) {
-      setStatus('未找到要删除的分组。')
-      return
-    }
-
-    const confirmed = window.confirm(`确认删除分组“${resolved.group.name}”？其中的条目也会一并删除。`)
-    if (!confirmed) {
-      return
-    }
-
-    try {
-      await deleteLexiconGroupRequest(resolved.lexicon.id, resolved.group.id)
-      await refreshLexiconGroups()
-      setActiveLexiconId(resolved.lexicon.id)
-      if (activeSidebarGroupId === groupId) {
-        setActiveSidebarGroupId(null)
-      }
-      setStatus(`已删除分组：${resolved.group.name}`)
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function moveSidebarLexiconGroup(movingGroupId: string, anchorGroupId: string, placement: 'before' | 'after') {
-    const moving = findLexiconGroupById(movingGroupId)
-    const anchor = findLexiconGroupById(anchorGroupId)
-    if (!moving || !anchor || moving.lexicon.id !== anchor.lexicon.id || moving.group.id === anchor.group.id) {
-      return
-    }
-
-    try {
-      await moveLexiconGroupRequest(moving.lexicon.id, moving.group.id, anchor.group.id, placement)
-      await refreshLexiconGroups()
-      setActiveLexiconId(moving.lexicon.id)
-      setActiveLexiconGroupId(moving.group.id)
-      setActiveSidebarGroupId(moving.group.id)
-      setStatus(`已调整分组顺序：${moving.group.name}`)
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function createSidebarLexiconEntry(groupId: string) {
-    const resolved = findLexiconGroupById(groupId)
-    if (!resolved) {
-      setStatus('请先选择一个分组。')
-      return
-    }
-
-    const text = window.prompt('条目内容')?.trim()
-    if (!text) {
-      return
-    }
-
-    try {
-      await createLexiconEntryRequest(resolved.lexicon.id, resolved.group.id, text)
-      await refreshLexiconGroups()
-      setActiveLexiconId(resolved.lexicon.id)
-      setActiveLexiconGroupId(resolved.group.id)
-      setActiveSidebarGroupId(resolved.group.id)
-      setStatus('已添加词库条目。')
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function renameSidebarLexiconEntry(groupId: string, entryId: string) {
-    const resolved = findLexiconEntryById(groupId, entryId)
-    if (!resolved) {
-      setStatus('未找到要重命名的条目。')
-      return
-    }
-
-    const text = window.prompt('条目内容', resolved.entry.text)?.trim()
-    if (!text || text === resolved.entry.text) {
-      return
-    }
-
-    try {
-      await updateLexiconEntryRequest(resolved.lexicon.id, resolved.group.id, resolved.entry.id, text)
-      await refreshLexiconGroups()
-      setActiveLexiconId(resolved.lexicon.id)
-      setActiveLexiconGroupId(resolved.group.id)
-      setActiveSidebarGroupId(resolved.group.id)
-      setStatus('已更新词库条目。')
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function deleteSidebarLexiconEntry(groupId: string, entryId: string) {
-    const resolved = findLexiconEntryById(groupId, entryId)
-    if (!resolved) {
-      setStatus('未找到要删除的条目。')
-      return
-    }
-
-    const confirmed = window.confirm(`确认删除条目“${resolved.entry.text}”？`)
-    if (!confirmed) {
-      return
-    }
-
-    try {
-      await deleteLexiconEntryRequest(resolved.lexicon.id, resolved.group.id, resolved.entry.id)
-      await refreshLexiconGroups()
-      setActiveLexiconId(resolved.lexicon.id)
-      setActiveLexiconGroupId(resolved.group.id)
-      setActiveSidebarGroupId(resolved.group.id)
-      setStatus('已删除词库条目。')
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function moveSidebarLexiconEntry(sourceGroupId: string, movingEntryId: string, targetGroupId: string, anchorEntryId: string | null, placement: 'before' | 'after') {
-    const resolved = findLexiconEntryById(sourceGroupId, movingEntryId)
-    const target = findLexiconGroupById(targetGroupId)
-    const anchor = anchorEntryId ? findLexiconEntryById(targetGroupId, anchorEntryId) : null
-    if (!resolved || !target || (anchorEntryId && !anchor) || (resolved.group.id === target.group.id && resolved.entry.id === anchorEntryId)) {
-      return
-    }
-
-    try {
-      await moveLexiconEntryRequest(resolved.lexicon.id, resolved.group.id, resolved.entry.id, anchorEntryId, placement, target.group.id)
-      await refreshLexiconGroups()
-      setActiveLexiconId(resolved.lexicon.id)
-      setActiveLexiconGroupId(target.group.id)
-      setActiveSidebarGroupId(target.group.id)
-      setStatus('已调整条目顺序。')
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
   }
 
   function bindLexiconGroupToElement(
@@ -1560,22 +1324,17 @@ export default function App() {
       setLexiconGroups(lexiconGroupsResponse)
       setLexiconLibrary(lexiconLibraryResponse)
       setActiveLexiconId((current) => current ?? lexiconLibraryResponse.lexicons[0]?.id ?? null)
-      setActiveLexiconGroupId((current) => current ?? lexiconLibraryResponse.lexicons[0]?.groups[0]?.id ?? null)
       const savedWorkspace = readWorkspaceSnapshot()
       const restoredTabs = savedWorkspace?.tabs.map((tab) => normalizeEditorTab(tab)) ?? []
 
       if (restoredTabs.length > 0) {
-        const legacyTemplatesSurface = savedWorkspace?.ui?.activeSurface === 'templates'
-        const restoredSurface =
-          savedWorkspace?.ui?.activeSurface === 'lexicons' || legacyTemplatesSurface
-            ? 'editor'
-            : savedWorkspace?.ui?.activeSurface ?? 'editor'
+        const restoredSurface = savedWorkspace?.ui?.activeSurface ?? 'editor'
         setTabs(restoredTabs)
         setActiveTabId(savedWorkspace?.activeTabId && restoredTabs.some((tab) => tab.id === savedWorkspace.activeTabId) ? savedWorkspace.activeTabId : restoredTabs[0].id)
         setLastEditorTabId(savedWorkspace?.ui?.lastEditorTabId ?? savedWorkspace?.activeTabId ?? restoredTabs[0].id)
         setActiveSurface(restoredSurface)
         setActiveEditorPanel(savedWorkspace?.ui?.activeEditorPanel ?? 'inspector')
-        setSidebarTab(savedWorkspace?.ui?.sidebarTab ?? (legacyTemplatesSurface ? 'templates' : 'elements'))
+        setSidebarTab(savedWorkspace?.ui?.sidebarTab ?? 'elements')
         setPreviewTemplateId(savedWorkspace?.ui?.previewTemplateId ?? null)
         setStatus(`已恢复上次工作区，共 ${restoredTabs.length} 个标签页。`)
         return
@@ -1648,134 +1407,26 @@ export default function App() {
     setLexiconGroups(groups)
     setLexiconLibrary(library)
     setActiveLexiconId((current) => current && library.lexicons.some((lexicon) => lexicon.id === current) ? current : library.lexicons[0]?.id ?? null)
-    setActiveLexiconGroupId((current) =>
-      current && library.lexicons.some((lexicon) => lexicon.groups.some((group) => group.id === current))
-        ? current
-        : library.lexicons[0]?.groups[0]?.id ?? null,
-    )
   }
 
-  async function createLexiconGroup() {
-    if (!activeLexicon) {
-      setStatus('词库尚未初始化。')
-      return
-    }
-
-    const name = window.prompt('分组名称', '新分组')?.trim()
-    if (!name) {
-      return
-    }
-
-    try {
-      const created = await createLexiconGroupRequest(activeLexicon.id, name)
-      await refreshLexiconGroups()
-      setActiveLexiconId(activeLexicon.id)
-      setActiveLexiconGroupId(created.id)
-      setStatus(`已创建分组：${created.name}`)
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function renameLexiconGroup(group: LexiconGroup) {
-    if (!activeLexicon) {
-      return
-    }
-
-    const name = window.prompt('分组名称', group.name)?.trim()
-    if (!name || name === group.name) {
-      return
-    }
-
-    try {
-      const saved = await renameLexiconGroupRequest(activeLexicon.id, group.id, name)
-      await refreshLexiconGroups()
-      setActiveLexiconId(activeLexicon.id)
-      setActiveLexiconGroupId(saved.id)
-      setStatus(`已重命名分组：${saved.name}`)
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function deleteLexiconGroup(group: LexiconGroup) {
-    if (!activeLexicon) {
-      return
-    }
-
-    const confirmed = window.confirm(`确认删除分组“${group.name}”？其中的条目也会一并删除。`)
-    if (!confirmed) {
-      return
-    }
-
-    try {
-      await deleteLexiconGroupRequest(activeLexicon.id, group.id)
-      await refreshLexiconGroups()
-      setActiveLexiconId(activeLexicon.id)
-      setStatus(`已删除分组：${group.name}`)
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function createLexiconEntry() {
-    if (!activeLexicon || !activeLexiconGroup) {
-      setStatus('请先选择一个分组。')
-      return
-    }
-
-    const text = window.prompt('条目内容')?.trim()
-    if (!text) {
-      return
-    }
-
-    try {
-      await createLexiconEntryRequest(activeLexicon.id, activeLexiconGroup.id, text)
-      await refreshLexiconGroups()
-      setActiveLexiconId(activeLexicon.id)
-      setActiveLexiconGroupId(activeLexiconGroup.id)
-      setStatus('已添加词库条目。')
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function updateLexiconEntry(entry: LexiconEntry, text: string) {
-    if (!activeLexicon || !activeLexiconGroup || !text.trim() || text === entry.text) {
-      return
-    }
-
-    try {
-      await updateLexiconEntryRequest(activeLexicon.id, activeLexiconGroup.id, entry.id, text.trim())
-      await refreshLexiconGroups()
-      setActiveLexiconId(activeLexicon.id)
-      setActiveLexiconGroupId(activeLexiconGroup.id)
-      setStatus('已更新词库条目。')
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
-
-  async function deleteLexiconEntry(entry: LexiconEntry) {
-    if (!activeLexicon || !activeLexiconGroup) {
-      return
-    }
-
-    const confirmed = window.confirm(`确认删除条目“${entry.text}”？`)
-    if (!confirmed) {
-      return
-    }
-
-    try {
-      await deleteLexiconEntryRequest(activeLexicon.id, activeLexiconGroup.id, entry.id)
-      await refreshLexiconGroups()
-      setActiveLexiconId(activeLexicon.id)
-      setActiveLexiconGroupId(activeLexiconGroup.id)
-      setStatus('已删除词库条目。')
-    } catch (error) {
-      setStatus(getErrorMessage(error))
-    }
-  }
+  const {
+    createSidebarLexiconGroup,
+    renameSidebarLexiconGroup,
+    deleteSidebarLexiconGroup,
+    moveSidebarLexiconGroup,
+    createSidebarLexiconEntry,
+    renameSidebarLexiconEntry,
+    deleteSidebarLexiconEntry,
+    moveSidebarLexiconEntry,
+  } = useLexiconSidebarActions({
+    lexiconLibrary,
+    activeLexiconId,
+    activeSidebarGroupId,
+    setActiveLexiconId,
+    setActiveSidebarGroupId,
+    setStatus,
+    refreshLexiconGroups,
+  })
 
   function applySavedTemplateToTabs(saved: LabelTemplateRecord, savingTabId: string, snapshotAtSaveStart: string) {
     const normalized = normalizeDocument(saved.document)
@@ -2454,7 +2105,7 @@ export default function App() {
       }
     }
 
-    return importDlabelTemplate(source, fileName, {
+    return importLegacyTemplate(source, fileName, {
       minDocumentSizeMm,
       minElementSizeMm,
       defaultFontFamily,
@@ -3203,6 +2854,7 @@ export default function App() {
         printing={printing}
         exporting={exporting}
         dataManaging={dataManaging}
+        aboutOpen={showAboutDialog}
         onShowEditor={showEditor}
         onCloseTab={closeTab}
         onCreateFreshDocument={createFreshDocument}
@@ -3221,28 +2873,14 @@ export default function App() {
         onBackupAllData={() => void backupAllData()}
         onRestoreDataBackup={requestRestoreDataBackup}
         onOpenDataDirectory={() => void openLocalDataDirectory()}
+        onOpenAbout={() => setShowAboutDialog(true)}
         onOpenPrintCheck={openPrintCheckSurface}
         onPrintCurrent={() => void printCurrent()}
         onRequestAppClose={requestAppClose}
       />
 
       <main className={clsx('workspace', activeSurface === 'print-check' && 'print-check-mode', sidebarTab === 'templates' && activeSurface === 'editor' && 'template-preview-mode')}>
-        {activeSurface === 'lexicons' ? (
-          <LexiconManager
-            library={lexiconLibrary}
-            activeGroup={activeLexiconGroup}
-            filteredEntries={filteredLexiconEntries}
-            query={lexiconQuery}
-            onQueryChange={setLexiconQuery}
-            onSelectGroup={(group) => setActiveLexiconGroupId(group.id)}
-            onCreateGroup={() => void createLexiconGroup()}
-            onRenameGroup={(group) => void renameLexiconGroup(group)}
-            onDeleteGroup={(group) => void deleteLexiconGroup(group)}
-            onCreateEntry={() => void createLexiconEntry()}
-            onUpdateEntry={(entry, text) => void updateLexiconEntry(entry, text)}
-            onDeleteEntry={(entry) => void deleteLexiconEntry(entry)}
-          />
-        ) : activeSurface === 'print-check' ? (
+        {activeSurface === 'print-check' ? (
           <PrintCheckSurface
             labelDocument={labelDocument}
             currentPrinter={currentPrinter}
@@ -3454,6 +3092,13 @@ export default function App() {
 
       <input ref={ddlInputRef} type="file" accept=".ddl,.xml,.json,.yblabel.json,text/xml,application/json" hidden onChange={handleDdlUpload} />
       <input ref={backupInputRef} type="file" accept=".zip,.yibolabel-backup,application/zip" hidden onChange={handleBackupRestoreUpload} />
+
+      <AboutDialog
+        open={showAboutDialog}
+        appVersion={appState?.appVersion ?? fallbackAppVersion}
+        githubUrl={githubUrl}
+        onClose={() => setShowAboutDialog(false)}
+      />
 
       <ExportDialog
         open={showExportDialog && hasActiveTab}

@@ -1,8 +1,8 @@
-# 模板 / 草稿 / 退出确认 临时实施规格
+# 模板 / 草稿 / 退出确认设计规则
 
-> 状态：临时实施文档
+> 状态：当前设计参考。
 > 日期：2026-07-16
-> 目的：把“模板库、草稿、新建、导入、保存、关闭程序确认”收敛成一套可直接开发的规格，避免继续在模糊语义上叠功能。
+> 当前用途：保留模板、草稿、保存、关闭 tab 和退出确认的产品语义。
 
 ## 1. 背景
 
@@ -304,44 +304,9 @@ export function getTabStatusLabel(tab: Pick<EditorTab, 'document' | 'lastSavedSn
 
 - `deleteTemplate()`
 
-## 6. 模板库页面规格
+## 6. 关闭单个 tab 规格
 
-文件：
-
-- `src/YiboLabel.App/ClientApp/src/components/TemplateLibraryView.tsx`
-
-### 6.1 文案调整
-
-将以下文案改清楚：
-
-- `导入` -> `导入为草稿`
-- 页面说明改为：
-  - `打开和管理本地模板，也可新建空白草稿或导入外部文件为草稿。`
-
-空状态说明建议改为：
-
-- `先新建一个草稿并保存为模板，或导入一份文件作为草稿。`
-
-### 6.2 入口收敛建议
-
-本轮不一定必须移除模板库内的 `新建` / `导入为草稿` 按钮，但要把语义弱化：
-
-- 它们是“跳去开始编辑”
-- 不是“模板库内创建模板”
-
-### 6.3 模板卡片主按钮
-
-当前逻辑保留：
-
-- 未打开 -> `打开模板`
-- 已打开当前 -> `返回当前草稿`
-- 已打开但不在当前 -> `打开草稿`
-
-这个逻辑是合理的，不必重做。
-
-## 7. 关闭单个 tab 规格
-
-## 7.1 触发时机
+## 6.1 触发时机
 
 关闭 tab 时，如果：
 
@@ -350,13 +315,13 @@ export function getTabStatusLabel(tab: Pick<EditorTab, 'document' | 'lastSavedSn
 
 不要继续只用 `window.confirm`，因为需要三按钮。
 
-### 7.2 对话框按钮
+### 6.2 对话框按钮
 
 - `保存`
 - `不保存`
 - `取消`
 
-### 7.3 不同来源的保存行为
+### 6.3 不同来源的保存行为
 
 #### 模板草稿
 
@@ -402,7 +367,7 @@ export function getTabStatusLabel(tab: Pick<EditorTab, 'document' | 'lastSavedSn
 
 - 进入 `saveAsTemplate()`
 
-### 7.4 推荐实现方式
+### 6.4 推荐实现方式
 
 新增组件：
 
@@ -423,13 +388,13 @@ type UnsavedChangesDialogProps = {
 }
 ```
 
-## 8. 关闭程序前确认规格
+## 7. 关闭程序前确认规格
 
-## 8.1 目标
+## 7.1 目标
 
 你提出的“关闭程序时，如有未保存模板或草稿，弹窗提示是否保存”应作为正式流程，而不是只靠浏览器原生拦截。
 
-### 8.2 两层机制
+### 7.2 两层机制
 
 #### 第一层：应用内汇总弹窗
 
@@ -447,7 +412,7 @@ type UnsavedChangesDialogProps = {
 - 非预期关闭
 - 浏览器 / WebView 级关闭
 
-### 8.3 汇总弹窗内容
+### 7.3 汇总弹窗内容
 
 列出所有未保存 tab，建议显示：
 
@@ -461,14 +426,14 @@ type UnsavedChangesDialogProps = {
 - `导入草稿：shipping.ddl`
 - `空白草稿：快速标签`
 
-### 8.4 汇总弹窗按钮
+### 7.4 汇总弹窗按钮
 
 - `全部保存`
 - `逐个处理`
 - `放弃并退出`
 - `取消`
 
-### 8.5 各按钮行为
+### 7.5 各按钮行为
 
 #### 全部保存
 
@@ -496,7 +461,7 @@ type UnsavedChangesDialogProps = {
 
 - 不关闭程序
 
-### 8.6 推荐实现方式
+### 7.6 推荐实现方式
 
 新增组件：
 
@@ -521,19 +486,19 @@ type PendingSavesDialogProps = {
 }
 ```
 
-## 9. 顶部按钮与文案规格
+## 8. 顶部按钮与文案规格
 
 文件：
 
 - `src/YiboLabel.App/ClientApp/src/components/WorkspaceTopbar.tsx`
 
-### 9.1 导入按钮
+### 8.1 导入按钮
 
 按钮文本建议改成：
 
 - `导入为草稿`
 
-### 9.2 保存按钮
+### 8.2 保存按钮
 
 按钮文本建议改成固定 `保存`，不要根据 `activeTemplateId` 切换成 `保存为模板`。
 
@@ -548,7 +513,7 @@ type PendingSavesDialogProps = {
 
 - `当前草稿未绑定模板，保存将进入另存为模板`
 
-### 9.3 另存为按钮
+### 8.3 另存为按钮
 
 建议改成：
 
@@ -556,116 +521,9 @@ type PendingSavesDialogProps = {
 
 不要只写 `另存为`，避免像普通文件菜单。
 
-## 10. 代码改造顺序
+## 9. 测试点
 
-### 第 1 步：数据模型
-
-修改：
-
-- `workspace.ts`
-- `editorTabs.ts`
-
-内容：
-
-- 加 `origin`
-- 快照兼容旧版本
-- 统一文案函数
-
-### 第 2 步：主流程
-
-修改：
-
-- `App.tsx`
-
-内容：
-
-- 新建 / 导入 / 打开模板 写入正确 `origin`
-- 另存为后切为 `template`
-- 删除模板后的解绑状态明确
-
-### 第 3 步：展示文案
-
-修改：
-
-- `WorkspaceTopbar.tsx`
-- `EditorCanvasPanel.tsx`
-- `TemplateLibraryView.tsx`
-
-内容：
-
-- 状态条
-- 导入按钮文案
-- 模板库说明文案
-
-### 第 4 步：关闭 tab 弹窗
-
-新增：
-
-- `UnsavedChangesDialog.tsx`
-
-修改：
-
-- `App.tsx`
-- tab 关闭流程
-
-### 第 5 步：退出程序汇总弹窗
-
-新增：
-
-- `PendingSavesDialog.tsx`
-
-修改：
-
-- `App.tsx`
-- 窗口关闭命令流程
-
-## 11. 兼容与迁移
-
-### 11.1 workspaceStorageKey
-
-当前值：
-
-```ts
-export const workspaceStorageKey = 'yibolabel.workspace.v8'
-```
-
-有两种做法：
-
-#### 做法 A：升级 key
-
-- 改为 `v9`
-
-优点：
-
-- 逻辑最干净
-
-缺点：
-
-- 会丢掉用户本地旧工作区恢复能力
-
-#### 做法 B：保留 key，提升 snapshot version
-
-- 仍使用同一个 localStorage key
-- `version` 从 `8` 提升到 `9`
-- 在 `readWorkspaceSnapshot()` 中兼容 `7` 和 `8`
-
-推荐采用做法 B。
-
-### 11.2 旧 tab origin 推断
-
-若旧快照没有 `origin`：
-
-- `templateId !== null` -> `template`
-- `templateId === null` -> `blank`
-
-注意：
-
-- 旧导入草稿无法准确恢复为 `imported`
-- 这是可接受损失
-
-## 12. 测试点
-
-### 12.1 必测流程
+### 9.1 必测流程
 
 - 新建草稿后显示 `空白草稿`
 - 导入草稿后显示 `导入草稿`
@@ -678,7 +536,7 @@ export const workspaceStorageKey = 'yibolabel.workspace.v8'
 - 关闭脏 tab 时能出现正确弹窗
 - 退出程序时能列出全部脏 tab
 
-### 12.2 边界测试
+### 9.2 边界测试
 
 - `saveAsTemplate()` 时用户取消命名
 - 退出程序时多个未绑定草稿依次命名
@@ -686,7 +544,7 @@ export const workspaceStorageKey = 'yibolabel.workspace.v8'
 - 导入的 `.yblabel.json` 与普通 JSON 的提示差异
 - 恢复旧 workspace snapshot 时不崩
 
-## 13. 非目标
+## 10. 非目标
 
 本轮不处理：
 
@@ -697,11 +555,11 @@ export const workspaceStorageKey = 'yibolabel.workspace.v8'
 - 导入后自动归档到模板库
 - 多窗口协同编辑
 
-## 14. 一句话验收标准
+## 11. 一句话验收标准
 
 如果做到下面这几条，本轮就算完成：
 
 - 用户能一眼看出当前是 `模板草稿`、`导入草稿` 还是 `空白草稿`
 - `保存` 的意义稳定，不再让人猜“会保存到哪里”
 - 关闭 tab 和关闭程序时，不会无提示丢失未保存内容
-- 模板库重新回到“模板文件管理”的边界，不再承担模糊的编辑语义
+- 模板管理入口保持轻量，不承担模糊的编辑语义

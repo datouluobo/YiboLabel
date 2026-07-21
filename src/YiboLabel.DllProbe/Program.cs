@@ -2,34 +2,34 @@ using System.Runtime.InteropServices;
 using System.Text;
 using YiboLabel.PrintCore;
 
-var dlabelDir = @"C:\Program Files (x86)\Dlabel";
+var vendorDllDir = @"C:\Program Files (x86)\Dlabel";
 var exportFilter = args.Length > 0 ? args[0] : null;
 
 if (string.Equals(exportFilter, "test-command-init", StringComparison.Ordinal))
 {
-    NativeMethods.SetDllDirectory(dlabelDir);
-    RunCommandInitExperiment(Path.Combine(dlabelDir, "DPrintCore.dll"));
+    NativeMethods.SetDllDirectory(vendorDllDir);
+    RunCommandInitExperiment(Path.Combine(vendorDllDir, "DPrintCore.dll"));
     return;
 }
 
 if (string.Equals(exportFilter, "test-command-open-usb", StringComparison.Ordinal))
 {
-    NativeMethods.SetDllDirectory(dlabelDir);
-    RunCommandOpenUsbExperiment(Path.Combine(dlabelDir, "DPrintCore.dll"));
+    NativeMethods.SetDllDirectory(vendorDllDir);
+    RunCommandOpenUsbExperiment(Path.Combine(vendorDllDir, "DPrintCore.dll"));
     return;
 }
 
 if (string.Equals(exportFilter, "dump-usb-vtable", StringComparison.Ordinal))
 {
-    NativeMethods.SetDllDirectory(dlabelDir);
-    DumpUsbVtableExperiment(Path.Combine(dlabelDir, "DPrintCore.dll"));
+    NativeMethods.SetDllDirectory(vendorDllDir);
+    DumpUsbVtableExperiment(Path.Combine(vendorDllDir, "DPrintCore.dll"));
     return;
 }
 
 if (string.Equals(exportFilter, "dump-usb-command-slots", StringComparison.Ordinal))
 {
-    NativeMethods.SetDllDirectory(dlabelDir);
-    DumpUsbCommandSlotsExperiment(Path.Combine(dlabelDir, "DPrintCore.dll"));
+    NativeMethods.SetDllDirectory(vendorDllDir);
+    DumpUsbCommandSlotsExperiment(Path.Combine(vendorDllDir, "DPrintCore.dll"));
     return;
 }
 
@@ -41,8 +41,8 @@ if (string.Equals(exportFilter, "send-usb-text", StringComparison.Ordinal))
         return;
     }
 
-    NativeMethods.SetDllDirectory(dlabelDir);
-    SendUsbTextExperiment(Path.Combine(dlabelDir, "DPrintCore.dll"), args[1]);
+    NativeMethods.SetDllDirectory(vendorDllDir);
+    SendUsbTextExperiment(Path.Combine(vendorDllDir, "DPrintCore.dll"), args[1]);
     return;
 }
 
@@ -61,8 +61,8 @@ if (string.Equals(exportFilter, "send-usb-file", StringComparison.Ordinal))
         return;
     }
 
-    NativeMethods.SetDllDirectory(dlabelDir);
-    SendUsbTextExperiment(Path.Combine(dlabelDir, "DPrintCore.dll"), File.ReadAllText(filePath, Encoding.ASCII));
+    NativeMethods.SetDllDirectory(vendorDllDir);
+    SendUsbTextExperiment(Path.Combine(vendorDllDir, "DPrintCore.dll"), File.ReadAllText(filePath, Encoding.ASCII));
     return;
 }
 
@@ -74,15 +74,15 @@ if (string.Equals(exportFilter, "invoke-usb-slot", StringComparison.Ordinal))
         return;
     }
 
-    NativeMethods.SetDllDirectory(dlabelDir);
-    InvokeUsbSlotExperiment(Path.Combine(dlabelDir, "DPrintCore.dll"), slotIndex);
+    NativeMethods.SetDllDirectory(vendorDllDir);
+    InvokeUsbSlotExperiment(Path.Combine(vendorDllDir, "DPrintCore.dll"), slotIndex);
     return;
 }
 
 var dlls = new[]
 {
-    Path.Combine(dlabelDir, "USBApi.dll"),
-    Path.Combine(dlabelDir, "DPrintCore.dll")
+    Path.Combine(vendorDllDir, "USBApi.dll"),
+    Path.Combine(vendorDllDir, "DPrintCore.dll")
 };
 
 foreach (var dll in dlls)
@@ -98,7 +98,7 @@ Console.WriteLine("YiboLabel DLL Probe");
 Console.WriteLine($"Bitness: {(Environment.Is64BitProcess ? "x64" : "x86")}");
 Console.WriteLine();
 
-NativeMethods.SetDllDirectory(dlabelDir);
+NativeMethods.SetDllDirectory(vendorDllDir);
 
 foreach (var dll in dlls)
 {
@@ -371,7 +371,7 @@ static void SendUsbTextExperiment(string dllPath, string text)
 
     try
     {
-        using var channel = DlabelPrinterChannel.Open(@"\\?\usb#vid_28e9&pid_0285#00000000011a#{a5dcbf10-6530-11d2-901f-00c04fb951ed}", Path.GetDirectoryName(dllPath));
+        using var channel = VendorDllPrinterChannel.Open(@"\\?\usb#vid_28e9&pid_0285#00000000011a#{a5dcbf10-6530-11d2-901f-00c04fb951ed}", Path.GetDirectoryName(dllPath));
         var normalizedText = text.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
         Console.WriteLine($"device path: {channel.DevicePath}");
         Console.WriteLine($"payload: {normalizedText}");

@@ -9,7 +9,7 @@ import type {
   TextElement,
 } from '../types'
 
-type DlabelPaperLayout = {
+type LegacyTemplatePaperLayout = {
   widthMm: number
   heightMm: number
   rotation: number
@@ -17,12 +17,12 @@ type DlabelPaperLayout = {
   sourceHeightMm: number
 }
 
-export type DlabelImportResult = {
+export type LegacyTemplateImportResult = {
   document: LabelDocument
   warnings: string[]
 }
 
-export type DlabelImportDependencies = {
+export type LegacyTemplateImportDependencies = {
   minDocumentSizeMm: number
   minElementSizeMm: number
   defaultFontFamily: string
@@ -34,8 +34,8 @@ export type DlabelImportDependencies = {
   createId: () => string
 }
 
-export function importDlabelTemplate(source: string, fileName: string, dependencies: DlabelImportDependencies): DlabelImportResult {
-  const xml = sanitizeDlabelXml(source)
+export function importLegacyTemplate(source: string, fileName: string, dependencies: LegacyTemplateImportDependencies): LegacyTemplateImportResult {
+  const xml = sanitizeLegacyTemplateXml(source)
   const parser = new DOMParser()
   const documentNode = parser.parseFromString(xml, 'application/xml')
   const parserError = documentNode.querySelector('parsererror')
@@ -48,14 +48,14 @@ export function importDlabelTemplate(source: string, fileName: string, dependenc
     throw new Error('DDL 文件中缺少 paper 节点。')
   }
 
-  const paperLayout = readDlabelPaperLayout(paper, dependencies)
+  const paperLayout = readLegacyTemplatePaperLayout(paper, dependencies)
   const baseName = fileName.replace(/\.[^.]+$/, '').trim() || '导入标签'
   const warnings: string[] = []
   let unsupportedCount = 0
 
   const elements = Array.from(documentNode.querySelectorAll('labelobjects > drawobj'))
-    .sort((left, right) => readDlabelNumber(left, 'zvalue', 0) - readDlabelNumber(right, 'zvalue', 0))
-    .map((node, index) => parseDlabelObject(node, index, paperLayout, dependencies))
+    .sort((left, right) => readLegacyTemplateNumber(left, 'zvalue', 0) - readLegacyTemplateNumber(right, 'zvalue', 0))
+    .map((node, index) => parseLegacyTemplateObject(node, index, paperLayout, dependencies))
     .flatMap((result) => {
       if (!result) {
         unsupportedCount += 1
@@ -94,14 +94,14 @@ export function importDlabelTemplate(source: string, fileName: string, dependenc
   }
 }
 
-function sanitizeDlabelXml(source: string) {
+function sanitizeLegacyTemplateXml(source: string) {
   return source.replace(/\s+previewimage="[\s\S]*?"(?=\s*>)/, '')
 }
 
-function readDlabelPaperLayout(node: Element, dependencies: DlabelImportDependencies): DlabelPaperLayout {
-  const sourceWidthMm = Math.max(dependencies.minDocumentSizeMm, readDlabelNumber(node, 'w', 40))
-  const sourceHeightMm = Math.max(dependencies.minDocumentSizeMm, readDlabelNumber(node, 'h', 30))
-  const rotation = dependencies.normalizeRotation(readDlabelNumber(node, 'rotate', 0))
+function readLegacyTemplatePaperLayout(node: Element, dependencies: LegacyTemplateImportDependencies): LegacyTemplatePaperLayout {
+  const sourceWidthMm = Math.max(dependencies.minDocumentSizeMm, readLegacyTemplateNumber(node, 'w', 40))
+  const sourceHeightMm = Math.max(dependencies.minDocumentSizeMm, readLegacyTemplateNumber(node, 'h', 30))
+  const rotation = dependencies.normalizeRotation(readLegacyTemplateNumber(node, 'rotate', 0))
 
   return rotation === 90 || rotation === 270
     ? {
@@ -120,14 +120,14 @@ function readDlabelPaperLayout(node: Element, dependencies: DlabelImportDependen
       }
 }
 
-function transformDlabelRect(
+function transformLegacyTemplateRect(
   x: number,
   y: number,
   width: number,
   height: number,
   rotation: number,
-  paperLayout: DlabelPaperLayout,
-  dependencies: DlabelImportDependencies,
+  paperLayout: LegacyTemplatePaperLayout,
+  dependencies: LegacyTemplateImportDependencies,
 ) {
   if (paperLayout.rotation === 90) {
     return {
@@ -162,7 +162,7 @@ function transformDlabelRect(
   return { x, y, width, height, rotation }
 }
 
-function transformDlabelPoint(x: number, y: number, paperLayout: DlabelPaperLayout) {
+function transformLegacyTemplatePoint(x: number, y: number, paperLayout: LegacyTemplatePaperLayout) {
   if (paperLayout.rotation === 90) {
     return {
       x: paperLayout.sourceHeightMm - y,
@@ -187,19 +187,19 @@ function transformDlabelPoint(x: number, y: number, paperLayout: DlabelPaperLayo
   return { x, y }
 }
 
-function parseDlabelObject(
+function parseLegacyTemplateObject(
   node: Element,
   index: number,
-  paperLayout: DlabelPaperLayout,
-  dependencies: DlabelImportDependencies,
+  paperLayout: LegacyTemplatePaperLayout,
+  dependencies: LegacyTemplateImportDependencies,
 ): LabelElement | null {
   const itemType = node.getAttribute('itemtype') ?? ''
-  const rawX = readDlabelNumber(node, 'l', 0)
-  const rawY = readDlabelNumber(node, 't', 0)
-  const rawWidth = Math.max(dependencies.minElementSizeMm, readDlabelNumber(node, 'w', 10))
-  const rawHeight = Math.max(dependencies.minElementSizeMm, readDlabelNumber(node, 'h', 5))
-  const rawRotation = dependencies.normalizeRotation(readDlabelNumber(node, 'rotate', 0))
-  const transformed = transformDlabelRect(rawX, rawY, rawWidth, rawHeight, rawRotation, paperLayout, dependencies)
+  const rawX = readLegacyTemplateNumber(node, 'l', 0)
+  const rawY = readLegacyTemplateNumber(node, 't', 0)
+  const rawWidth = Math.max(dependencies.minElementSizeMm, readLegacyTemplateNumber(node, 'w', 10))
+  const rawHeight = Math.max(dependencies.minElementSizeMm, readLegacyTemplateNumber(node, 'h', 5))
+  const rawRotation = dependencies.normalizeRotation(readLegacyTemplateNumber(node, 'rotate', 0))
+  const transformed = transformLegacyTemplateRect(rawX, rawY, rawWidth, rawHeight, rawRotation, paperLayout, dependencies)
   const x = dependencies.clamp(transformed.x, 0, paperLayout.widthMm)
   const y = dependencies.clamp(transformed.y, 0, paperLayout.heightMm)
   const width = dependencies.clamp(transformed.width, dependencies.minElementSizeMm, paperLayout.widthMm)
@@ -219,11 +219,11 @@ function parseDlabelObject(
       rotation,
       zIndex: index,
       text: textNode?.getAttribute('value') ?? '',
-      fontSize: dependencies.clamp(Math.round(readDlabelNumber(node, 'fontsize', 18)), 4, 96),
+      fontSize: dependencies.clamp(Math.round(readLegacyTemplateNumber(node, 'fontsize', 18)), 4, 96),
       fontFamily: dependencies.defaultFontFamily,
       bold: (node.getAttribute('fontbold') ?? '').toLowerCase() === 'true',
       italic: (node.getAttribute('fontitalic') ?? '').toLowerCase() === 'true',
-      align: mapDlabelTextAlign(node.getAttribute('alignment')),
+      align: mapLegacyTemplateTextAlign(node.getAttribute('alignment')),
     } satisfies TextElement
   }
 
@@ -266,7 +266,7 @@ function parseDlabelObject(
       rotation,
       zIndex: index,
       value,
-      symbology: normalizeDlabelBarcode(barcodeType),
+      symbology: normalizeLegacyTemplateBarcode(barcodeType),
       showHumanReadable: (node.getAttribute('textposition') ?? '0') !== '-1',
       textPosition: 'bottom',
       humanReadableFontSize: 12,
@@ -275,11 +275,11 @@ function parseDlabelObject(
   }
 
   if (itemType === '1') {
-    return parseDlabelLine(node, index, paperLayout, dependencies)
+    return parseLegacyTemplateLine(node, index, paperLayout, dependencies)
   }
 
   if (itemType === '2' || itemType === '3') {
-    const thickness = Math.max(1, Math.round(readDlabelNumber(node, 'linewidth', readDlabelNumber(node, 'thickness', 1))))
+    const thickness = Math.max(1, Math.round(readLegacyTemplateNumber(node, 'linewidth', readLegacyTemplateNumber(node, 'thickness', 1))))
     return {
       id: dependencies.createId(),
       type: 'rectangle',
@@ -295,7 +295,7 @@ function parseDlabelObject(
   }
 
   if (itemType === '6' || itemType === '8' || itemType === '9') {
-    const imageDataUrl = extractDlabelImage(node)
+    const imageDataUrl = extractLegacyTemplateImage(node)
     if (imageDataUrl) {
       return {
         id: dependencies.createId(),
@@ -313,7 +313,7 @@ function parseDlabelObject(
     }
   }
 
-  const imageDataUrl = extractDlabelImage(node)
+  const imageDataUrl = extractLegacyTemplateImage(node)
   if (imageDataUrl) {
     return {
       id: dependencies.createId(),
@@ -333,22 +333,22 @@ function parseDlabelObject(
   return null
 }
 
-function parseDlabelLine(
+function parseLegacyTemplateLine(
   node: Element,
   index: number,
-  paperLayout: DlabelPaperLayout,
-  dependencies: DlabelImportDependencies,
+  paperLayout: LegacyTemplatePaperLayout,
+  dependencies: LegacyTemplateImportDependencies,
 ): LineElement {
-  const lineWidth = Math.max(1, Math.round(readDlabelNumber(node, 'linewidth', readDlabelNumber(node, 'thickness', 1))))
-  const degree = dependencies.normalizeRotation(readDlabelNumber(node, 'linedegree', readDlabelNumber(node, 'rotate', 0)) + paperLayout.rotation)
-  const startX = readDlabelNumber(node, 'linestartx', readDlabelNumber(node, 'l', 0))
-  const startY = readDlabelNumber(node, 'linestarty', readDlabelNumber(node, 't', 0))
+  const lineWidth = Math.max(1, Math.round(readLegacyTemplateNumber(node, 'linewidth', readLegacyTemplateNumber(node, 'thickness', 1))))
+  const degree = dependencies.normalizeRotation(readLegacyTemplateNumber(node, 'linedegree', readLegacyTemplateNumber(node, 'rotate', 0)) + paperLayout.rotation)
+  const startX = readLegacyTemplateNumber(node, 'linestartx', readLegacyTemplateNumber(node, 'l', 0))
+  const startY = readLegacyTemplateNumber(node, 'linestarty', readLegacyTemplateNumber(node, 't', 0))
   const lineLength = Math.max(
     dependencies.minElementSizeMm,
-    readDlabelNumber(node, 'linelength', Math.max(readDlabelNumber(node, 'w', 1), readDlabelNumber(node, 'h', 1))),
+    readLegacyTemplateNumber(node, 'linelength', Math.max(readLegacyTemplateNumber(node, 'w', 1), readLegacyTemplateNumber(node, 'h', 1))),
   )
-  const transformedStart = transformDlabelPoint(startX, startY, paperLayout)
-  const lineVisualThickness = Math.max(dependencies.minElementSizeMm, readDlabelNumber(node, 'w', readDlabelNumber(node, 'h', 1.2)))
+  const transformedStart = transformLegacyTemplatePoint(startX, startY, paperLayout)
+  const lineVisualThickness = Math.max(dependencies.minElementSizeMm, readLegacyTemplateNumber(node, 'w', readLegacyTemplateNumber(node, 'h', 1.2)))
   const horizontalDelta = degree === 180 ? -lineLength : lineLength
   const verticalDelta = degree === 270 ? -lineLength : lineLength
 
@@ -381,7 +381,7 @@ function parseDlabelLine(
   }
 }
 
-function readDlabelNumber(node: Element, attributeName: string, fallback: number) {
+function readLegacyTemplateNumber(node: Element, attributeName: string, fallback: number) {
   const raw = node.getAttribute(attributeName)
   if (!raw) {
     return fallback
@@ -391,7 +391,7 @@ function readDlabelNumber(node: Element, attributeName: string, fallback: number
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-function mapDlabelTextAlign(alignment: string | null): TextElement['align'] {
+function mapLegacyTemplateTextAlign(alignment: string | null): TextElement['align'] {
   if (alignment === '1' || alignment === '2') {
     return 'center'
   }
@@ -403,7 +403,7 @@ function mapDlabelTextAlign(alignment: string | null): TextElement['align'] {
   return 'left'
 }
 
-function normalizeDlabelBarcode(barcodeType: string) {
+function normalizeLegacyTemplateBarcode(barcodeType: string) {
   const normalized = barcodeType.replace(/[_\s-]/g, '').toUpperCase()
   if (normalized === 'CODE128') {
     return '128'
@@ -416,7 +416,7 @@ function normalizeDlabelBarcode(barcodeType: string) {
   return normalized || '128'
 }
 
-function extractDlabelImage(node: Element) {
+function extractLegacyTemplateImage(node: Element) {
   const attributes = node.getAttributeNames()
   for (const attributeName of attributes) {
     const value = node.getAttribute(attributeName)
